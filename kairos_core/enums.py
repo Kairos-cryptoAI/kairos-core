@@ -10,12 +10,19 @@ from enum import Enum
 
 
 class ReasoningEffort(str, Enum):
-    """LLM reasoning budget. Maps to a concrete model in :mod:`kairos-llm`."""
+    """Logical analysis depth, mapped to a concrete provider+model in :mod:`kairos-llm`.
 
-    LOW = "low"        # Text Scouts: read text, return structured sentiment
-    MEDIUM = "medium"  # Aggregator: calm market, maintain grid / trend
-    HIGH = "high"      # Aggregator: resolve indicator vs. news conflict
-    XHIGH = "xhigh"    # Macro-Strategist: capital allocation / regime change
+    DeepSeek-first + GPT escalation:
+      * ``LOW``    — DeepSeek-V4-Flash, non-thinking (Text Scouts; no reasoning effort).
+      * ``MEDIUM`` — DeepSeek-V4-Pro (Aggregator, calm market).
+      * ``HIGH``   — GPT-5.5, ``reasoning.effort=high`` (Aggregator, signal conflict).
+      * ``XHIGH``  — GPT-5.5, ``reasoning.effort=xhigh`` (Macro-Strategist).
+    """
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    XHIGH = "xhigh"
 
 
 class RouterMode(str, Enum):
