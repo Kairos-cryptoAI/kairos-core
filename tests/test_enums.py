@@ -7,8 +7,8 @@ def test_reasoning_effort_values():
 
 
 def test_router_modes():
-    assert RouterMode.USE_MEDIUM.value == "USE_MEDIUM"
-    assert RouterMode.USE_HIGH.value == "USE_HIGH"
+    assert RouterMode.ROUTE_PRO.value == "ROUTE_PRO"
+    assert RouterMode.ROUTE_GPT.value == "ROUTE_GPT"
 
 
 def test_system_modes():

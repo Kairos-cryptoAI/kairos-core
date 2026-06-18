@@ -19,10 +19,15 @@ class ReasoningEffort(str, Enum):
 
 
 class RouterMode(str, Enum):
-    """Flag emitted by the Router telling the Aggregator how hard to think."""
+    """Flag emitted by the Router selecting the Aggregator analytics contour.
 
-    USE_MEDIUM = "USE_MEDIUM"
-    USE_HIGH = "USE_HIGH"
+    DeepSeek-first + GPT escalation:
+      * ``ROUTE_PRO`` — routine flow on DeepSeek-V4-Pro (calm market, signals agree).
+      * ``ROUTE_GPT`` — escalation to GPT-5.5 (signal conflict, high cost of error).
+    """
+
+    ROUTE_PRO = "ROUTE_PRO"
+    ROUTE_GPT = "ROUTE_GPT"
 
 
 class SystemMode(str, Enum):
