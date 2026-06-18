@@ -31,10 +31,19 @@ class RouterMode(str, Enum):
 
 
 class SystemMode(str, Enum):
-    """Global operating mode, owned by the Risk Manager / Circuit Breaker."""
+    """Global operating mode, owned by the Risk Manager / Circuit Breaker.
+
+    Per-model Circuit Breaker degradation (severity increases downward):
+      * ``NORMAL`` — all analytics layers healthy.
+      * ``TEXT_LOCAL_FILTER`` — DeepSeek-V4-Flash down; Text Scouts filter locally.
+      * ``CONFLICT_SAFE`` — GPT-5.5 down; conflict decisions forced to WAIT_CONFIRMATION.
+      * ``LOCAL_QUANT_MODE`` — several models down; local stop-loss scripts only.
+    """
 
     NORMAL = "NORMAL"
-    LOCAL_QUANT_MODE = "LOCAL_QUANT_MODE"  # LLM detached, local stop-loss scripts only
+    TEXT_LOCAL_FILTER = "TEXT_LOCAL_FILTER"
+    CONFLICT_SAFE = "CONFLICT_SAFE"
+    LOCAL_QUANT_MODE = "LOCAL_QUANT_MODE"
 
 
 class Side(str, Enum):

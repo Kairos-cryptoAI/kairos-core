@@ -12,6 +12,9 @@ def test_router_modes():
 
 
 def test_system_modes():
+    assert SystemMode.NORMAL.value == "NORMAL"
+    assert SystemMode.TEXT_LOCAL_FILTER.value == "TEXT_LOCAL_FILTER"
+    assert SystemMode.CONFLICT_SAFE.value == "CONFLICT_SAFE"
     assert SystemMode.LOCAL_QUANT_MODE.value == "LOCAL_QUANT_MODE"
 
 
