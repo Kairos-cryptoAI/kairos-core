@@ -13,10 +13,12 @@ from .routing import RouterDecision
 from .tactical import TacticalCommand, GridAdjustment
 from .strategic import StrategicAllocation
 from .execution import OrderIntent, ValidatedOrder, ExecutionReport
+from .health import LLMHealthEvent
 
 __all__ = [
     "KairosMessage", "SCHEMA_VERSION",
     "MarketSnapshot", "OrderBookSummary", "DerivativesMetrics", "TechnicalIndicators",
     "SentimentSignal", "RouterDecision", "TacticalCommand", "GridAdjustment",
     "StrategicAllocation", "OrderIntent", "ValidatedOrder", "ExecutionReport",
+    "LLMHealthEvent",
 ]

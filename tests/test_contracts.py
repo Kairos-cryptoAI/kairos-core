@@ -56,3 +56,16 @@ def test_allocation_weights_cannot_exceed_one():
             stable_reserve_pct=0.6,
             strategy_weights={"grid": 0.3, "trend": 0.3},
         )
+
+
+def test_llm_health_event_round_trip_and_outage_flag():
+    from kairos_core.contracts import LLMHealthEvent
+    bad = LLMHealthEvent(source="text-scouts", provider="deepseek",
+                         model="deepseek-v4-flash", ok=False, kind="timeout", latency_s=20.0)
+    again = LLMHealthEvent.from_json(bad.to_json())
+    assert again.model == "deepseek-v4-flash"
+    assert again.is_outage is True
+    healthy = LLMHealthEvent(source="aggregator", provider="openai", model="gpt-5.5", ok=True)
+    assert healthy.is_outage is False
+    bad_output = LLMHealthEvent(source="x", provider="openai", model="gpt-5.5", ok=False, kind="error")
+    assert bad_output.is_outage is False  # API answered -> must not trip the breaker

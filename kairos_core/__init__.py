@@ -39,6 +39,7 @@ from .contracts import (
     OrderIntent,
     ValidatedOrder,
     ExecutionReport,
+    LLMHealthEvent,
 )
 
 __all__ = [
@@ -50,5 +51,5 @@ __all__ = [
     "KairosMessage", "MarketSnapshot", "OrderBookSummary", "DerivativesMetrics",
     "TechnicalIndicators", "SentimentSignal", "RouterDecision", "TacticalCommand",
     "GridAdjustment", "StrategicAllocation", "OrderIntent", "ValidatedOrder",
-    "ExecutionReport",
+    "ExecutionReport", "LLMHealthEvent",
 ]
