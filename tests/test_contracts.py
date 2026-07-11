@@ -108,6 +108,23 @@ def test_execution_contract_additions_are_backward_compatible():
     assert report.exchange_updated_at.tzinfo is not None
 
 
+def test_account_snapshot_carries_signed_positions_and_reconciliation_state():
+    from kairos_core.contracts import AccountSnapshot, PositionSnapshot
+
+    position = PositionSnapshot(
+        source="execution", exchange="evedex", account_id="primary",
+        symbol="BTCUSD", signed_quantity=-0.2, entry_price=65_000,
+    )
+    snapshot = AccountSnapshot(
+        source="execution", exchange="evedex", account_id="primary",
+        equity_usd=10_200, available_balance_usd=8_000,
+        peak_equity_usd=10_500, positions=[position], reconciled=True,
+    )
+    restored = AccountSnapshot.from_json(snapshot.to_json())
+    assert restored.positions[0].signed_quantity == -0.2
+    assert restored.reconciled is True
+
+
 def test_allocation_weights_cannot_exceed_one():
     with pytest.raises(ValidationError):
         StrategicAllocation(

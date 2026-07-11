@@ -14,6 +14,7 @@ class Topics:
     STRATEGIC_ALLOCATION = "kairos.macro.allocation"  # Macro         -> Risk Manager
     VALIDATED_ORDER = "kairos.risk.validated_order"   # Risk Manager  -> Execution
     EXECUTION_REPORT = "kairos.execution.report"      # Execution     -> everyone
+    ACCOUNT_SNAPSHOT = "kairos.account.snapshot"      # Reconciler    -> Risk/Macro
     SYSTEM_CONTROL = "kairos.system.control"          # Circuit Breaker broadcast
     LLM_HEALTH = "kairos.llm.health"                  # per-call LLM health -> Risk breakers
 

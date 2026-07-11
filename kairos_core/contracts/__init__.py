@@ -1,6 +1,7 @@
 """Typed, versioned messages exchanged on the Kairos bus."""
 from __future__ import annotations
 
+from .account import AccountSnapshot, PositionSnapshot
 from .base import KairosMessage, SCHEMA_VERSION
 from .market import (
     MarketSnapshot,
@@ -16,6 +17,7 @@ from .execution import OrderIntent, ValidatedOrder, ExecutionReport
 from .health import LLMHealthEvent
 
 __all__ = [
+    "AccountSnapshot", "PositionSnapshot",
     "KairosMessage", "SCHEMA_VERSION",
     "MarketSnapshot", "OrderBookSummary", "DerivativesMetrics", "TechnicalIndicators",
     "SentimentSignal", "RouterDecision", "TacticalCommand", "GridAdjustment",
