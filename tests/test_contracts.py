@@ -89,6 +89,25 @@ def test_tactical_command_reference_price_is_backward_compatible_and_bounded():
         )
 
 
+def test_execution_contract_additions_are_backward_compatible():
+    from kairos_core.contracts import ExecutionReport, OrderIntent
+    from kairos_core.enums import OrderSide, OrderStatus, OrderType
+
+    legacy_intent = OrderIntent(
+        source="risk", symbol="BTCUSDT", side=OrderSide.BUY,
+        order_type=OrderType.LIMIT, quantity=0.1, price=65_000,
+        reason_code=ReasonCode.ENTER_LONG_TREND,
+    )
+    assert legacy_intent.client_order_id is None
+    report = ExecutionReport(
+        source="execution", client_order_id="client-123", symbol="BTCUSDT",
+        side=OrderSide.BUY, status=OrderStatus.PARTIALLY_FILLED,
+        requested_qty=0.1, filled_qty=0.04, remaining_qty=0.06,
+    )
+    assert report.remaining_qty == pytest.approx(0.06)
+    assert report.exchange_updated_at.tzinfo is not None
+
+
 def test_allocation_weights_cannot_exceed_one():
     with pytest.raises(ValidationError):
         StrategicAllocation(
