@@ -53,6 +53,29 @@ def test_sentiment_bounds_enforced():
         SentimentSignal(source="text-scouts", topic="x", sentiment=1.5, impact=ImpactDirection.BULLISH)
 
 
+def test_message_schema_minor_and_correlation_are_backward_compatible():
+    legacy = SentimentSignal.model_validate({
+        "schema_version": "1.0", "source": "text", "topic": "ETF",
+        "sentiment": 0.2, "impact": "bullish",
+    })
+    assert legacy.correlation_id is None
+    upgraded = SentimentSignal.model_validate({
+        **legacy.to_payload(), "schema_version": "1.9",
+        "correlation_id": "trace-1", "causation_id": "parent-1", "future_field": "ignored",
+    })
+    assert upgraded.correlation_id == "trace-1"
+    assert upgraded.causation_id == "parent-1"
+
+
+@pytest.mark.parametrize("version", ["2.0", "bad", "1", "0.1", "1.-1"])
+def test_message_rejects_incompatible_or_malformed_schema(version):
+    with pytest.raises(ValidationError):
+        SentimentSignal(
+            schema_version=version, source="text", topic="ETF",
+            sentiment=0.2, impact=ImpactDirection.BULLISH,
+        )
+
+
 def test_tactical_command_reference_price_is_backward_compatible_and_bounded():
     legacy = TacticalCommand(
         source="aggregator", symbol="BTCUSDT", status=TacticalStatus.WAIT_CONFIRMATION,

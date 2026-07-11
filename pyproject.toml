@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kairos-core"
-version = "0.1.0"
+version = "0.2.0"
 description = "Shared contracts, message bus, config and logging for the Kairos AI futures trader."
 readme = "README.md"
 license = { text = "MIT" }
