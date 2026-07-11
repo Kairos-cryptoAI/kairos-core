@@ -7,6 +7,7 @@ crash. Payloads are stored as a single ``data`` field containing JSON.
 from __future__ import annotations
 
 import json
+import time
 from typing import AsyncIterator
 
 from .base import BusEnvelope, MessageBus, Publishable
@@ -42,6 +43,18 @@ class RedisStreamsBus(MessageBus):
                 raise
         self._groups_ready.add(key)
 
+    async def _reclaim_stale(
+        self, topic: str, group: str, consumer: str, *, min_idle_ms: int
+    ) -> list[tuple[str, dict]]:
+        """XAUTOCLAIM messages another consumer read but never acked (crash recovery)."""
+        try:
+            _cursor, messages, _deleted = await self._redis.xautoclaim(
+                topic, group, consumer, min_idle_time=min_idle_ms, start_id="0-0", count=16
+            )
+        except Exception:  # NOGROUP before first publish, older redis servers, etc.
+            return []
+        return [(msg_id, fields) for msg_id, fields in messages if fields]
+
     async def subscribe(  # type: ignore[override]
         self,
         topic: str,
@@ -49,11 +62,26 @@ class RedisStreamsBus(MessageBus):
         group: str | None = None,
         consumer: str | None = None,
         block_ms: int = 5000,
+        reclaim_idle_ms: int = 60_000,
+        reclaim_every_s: float = 30.0,
     ) -> AsyncIterator[BusEnvelope]:
         group = group or "default"
         consumer = consumer or "c1"
         await self._ensure_group(topic, group)
+        last_reclaim = 0.0
         while True:
+            # Periodically steal messages stuck in another consumer's PEL after a crash.
+            now = time.monotonic()
+            if now - last_reclaim >= reclaim_every_s:
+                last_reclaim = now
+                for msg_id, fields in await self._reclaim_stale(
+                    topic, group, consumer, min_idle_ms=reclaim_idle_ms
+                ):
+                    payload = json.loads(fields.get("data", "{}"))
+                    yield BusEnvelope(
+                        id=msg_id, topic=topic, payload=payload,
+                        meta={"group": group, "reclaimed": True},
+                    )
             resp = await self._redis.xreadgroup(
                 group, consumer, {topic: ">"}, count=16, block=block_ms
             )
