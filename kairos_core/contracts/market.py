@@ -17,7 +17,9 @@ class OrderBookSummary(BaseModel):
     best_bid: float = Field(..., gt=0)
     best_ask: float = Field(..., gt=0)
     spread_bps: float = Field(..., ge=0, description="(ask-bid)/mid in basis points")
-    imbalance: float = Field(..., ge=-1.0, le=1.0, description="(bidVol-askVol)/(bidVol+askVol) over top N levels")
+    imbalance: float = Field(
+        ..., ge=-1.0, le=1.0, description="(bidVol-askVol)/(bidVol+askVol) over top N levels"
+    )
     depth_usd: float = Field(..., ge=0, description="Notional resting within +/- band")
 
 
