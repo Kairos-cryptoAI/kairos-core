@@ -9,8 +9,9 @@ from kairos_core import (
     TechnicalIndicators,
     SentimentSignal,
     StrategicAllocation,
+    TacticalCommand,
 )
-from kairos_core.enums import ImpactDirection, MarketRegime, Side
+from kairos_core.enums import ImpactDirection, MarketRegime, ReasonCode, Side, TacticalStatus
 
 
 def _snapshot() -> MarketSnapshot:
@@ -50,6 +51,19 @@ def test_sentiment_matches_spec_example():
 def test_sentiment_bounds_enforced():
     with pytest.raises(ValidationError):
         SentimentSignal(source="text-scouts", topic="x", sentiment=1.5, impact=ImpactDirection.BULLISH)
+
+
+def test_tactical_command_reference_price_is_backward_compatible_and_bounded():
+    legacy = TacticalCommand(
+        source="aggregator", symbol="BTCUSDT", status=TacticalStatus.WAIT_CONFIRMATION,
+        reason_code=ReasonCode.NO_TRADE,
+    )
+    assert legacy.reference_price == 0.0
+    with pytest.raises(ValidationError):
+        TacticalCommand(
+            source="aggregator", symbol="BTCUSDT", reference_price=-1.0,
+            status=TacticalStatus.WAIT_CONFIRMATION, reason_code=ReasonCode.NO_TRADE,
+        )
 
 
 def test_allocation_weights_cannot_exceed_one():

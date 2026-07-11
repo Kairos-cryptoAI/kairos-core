@@ -21,6 +21,7 @@ class GridAdjustment(BaseModel):
 
 class TacticalCommand(KairosMessage):
     symbol: str
+    reference_price: float = Field(0.0, ge=0, description="Snapshot mid-price used for risk sizing.")
     status: TacticalStatus
     reason_code: ReasonCode
     target_side: Side = Side.FLAT
