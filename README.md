@@ -33,10 +33,14 @@ Scouts ─▶ Router ─▶ Aggregator ─▶ Macro-Strategist ─▶ Risk Manag
 3. **The bus is dumb.** It moves JSON between topics; services validate payloads back into
    the right contract. No per-message coupling in the transport.
 
-## Install
+## Local development
 
-```bash
-pip install -e ".[dev]"
+Install [uv](https://docs.astral.sh/uv/) once, then let the checked-in lockfile
+create the Python 3.11 environment:
+
+```powershell
+winget install --id astral-sh.uv --exact
+uv sync --locked
 ```
 
 ## Quick start
@@ -60,8 +64,13 @@ await bus.publish(Topics.MARKET_SNAPSHOT, snap)
 
 ## Tests
 
-```bash
-make test
+```powershell
+uv run --locked ruff check kairos_core tests
+uv run --locked ruff format --check kairos_core tests
+uv run --locked mypy kairos_core
+uv run --locked bandit -q -r kairos_core -x tests
+uv run --locked pytest -q --tb=short
+uv build --no-sources
 ```
 
 ---
