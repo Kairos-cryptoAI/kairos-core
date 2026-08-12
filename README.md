@@ -24,6 +24,10 @@ Scouts ─▶ Router ─▶ Aggregator ─▶ Macro-Strategist ─▶ Risk Manag
 | `kairos_core.config` | `CoreSettings` (env-driven, `KAIROS_` prefix) |
 | `kairos_core.logging` | Structured JSON / console logging |
 
+The production Redis backend requires Redis 8.2 or newer. Stream trimming uses
+consumer-group-aware `ACKED` retention so pending messages are never evicted
+before every group has acknowledged them.
+
 ## Design rules
 
 1. **The LLM never sees raw numbers.** Layer 1 digests the market into a `MarketSnapshot`
