@@ -3,9 +3,8 @@
 This is the only numeric payload the upper layers ever see. Raw order-book
 streams and tick data never leave Layer 1.
 """
-from __future__ import annotations
 
-from typing import Optional
+from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
@@ -36,7 +35,7 @@ class TechnicalIndicators(BaseModel):
     macd: float
     macd_signal: float
     macd_hist: float
-    atr_pct: Optional[float] = Field(None, ge=0, description="ATR as fraction of price")
+    atr_pct: float | None = Field(None, ge=0, description="ATR as fraction of price")
 
 
 class MarketSnapshot(KairosMessage):

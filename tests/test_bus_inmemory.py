@@ -1,4 +1,5 @@
 """Pub/sub behaviour of the in-memory bus."""
+
 import asyncio
 
 import pytest

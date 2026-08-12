@@ -1,4 +1,5 @@
 """XAUTOCLAIM crash-recovery behaviour of RedisStreamsBus (fake redis client)."""
+
 import asyncio
 import json
 

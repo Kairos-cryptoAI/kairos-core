@@ -1,7 +1,6 @@
 """Aggregator output — a concrete tactical command (Layer 3)."""
-from __future__ import annotations
 
-from typing import Optional
+from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
@@ -14,9 +13,9 @@ class GridAdjustment(BaseModel):
 
     recenter: bool = False
     shift_pct: float = Field(0.0, description="Shift grid center by this fraction of price.")
-    lower_price: Optional[float] = Field(None, gt=0)
-    upper_price: Optional[float] = Field(None, gt=0)
-    levels: Optional[int] = Field(None, gt=0)
+    lower_price: float | None = Field(None, gt=0)
+    upper_price: float | None = Field(None, gt=0)
+    levels: int | None = Field(None, gt=0)
 
 
 class TacticalCommand(KairosMessage):
@@ -27,6 +26,6 @@ class TacticalCommand(KairosMessage):
     target_side: Side = Side.FLAT
     requested_leverage: float = Field(1.0, gt=0, le=125)
     confidence: float = Field(0.5, ge=0.0, le=1.0)
-    grid: Optional[GridAdjustment] = None
+    grid: GridAdjustment | None = None
     effort_used: ReasoningEffort = ReasoningEffort.MEDIUM
     rationale: str = ""

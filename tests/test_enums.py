@@ -1,9 +1,11 @@
 """Wire-format guarantees for the shared enums."""
-from kairos_core.enums import ReasoningEffort, ReasonCode, RouterMode, SystemMode
+
+from kairos_core.enums import ReasonCode, ReasoningEffort, RouterMode, SystemMode
 
 
 def test_reasoning_effort_values():
     assert [e.value for e in ReasoningEffort] == ["low", "medium", "high", "xhigh"]
+    assert str(ReasoningEffort.HIGH) == "high"
 
 
 def test_router_modes():

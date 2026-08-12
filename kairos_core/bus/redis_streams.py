@@ -4,11 +4,13 @@ Each topic is a Redis Stream. Consumers read through a consumer group so that
 work is shared and unacked messages can be re-delivered (XAUTOCLAIM) after a
 crash. Payloads are stored as a single ``data`` field containing JSON.
 """
+
 from __future__ import annotations
 
 import json
 import time
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
+from typing import cast
 
 from .base import BusEnvelope, MessageBus, Publishable
 
@@ -28,9 +30,10 @@ class RedisStreamsBus(MessageBus):
 
     async def publish(self, topic: str, message: Publishable) -> str:
         payload = self._to_payload(message)
-        return await self._redis.xadd(
+        message_id = await self._redis.xadd(
             topic, {"data": json.dumps(payload)}, maxlen=self._maxlen, approximate=True
         )
+        return message_id.decode() if isinstance(message_id, bytes) else message_id
 
     async def _ensure_group(self, topic: str, group: str) -> None:
         key = (topic, group)
@@ -48,8 +51,11 @@ class RedisStreamsBus(MessageBus):
     ) -> list[tuple[str, dict]]:
         """XAUTOCLAIM messages another consumer read but never acked (crash recovery)."""
         try:
-            _cursor, messages, _deleted = await self._redis.xautoclaim(
-                topic, group, consumer, min_idle_time=min_idle_ms, start_id="0-0", count=16
+            _cursor, messages, _deleted = cast(
+                tuple[str, list[tuple[str, dict[str, str]]], list[str]],
+                await self._redis.xautoclaim(
+                    topic, group, consumer, min_idle_time=min_idle_ms, start_id="0-0", count=16
+                ),
             )
         except Exception:  # NOGROUP before first publish, older redis servers, etc.
             return []
@@ -79,11 +85,14 @@ class RedisStreamsBus(MessageBus):
                 ):
                     payload = json.loads(fields.get("data", "{}"))
                     yield BusEnvelope(
-                        id=msg_id, topic=topic, payload=payload,
+                        id=msg_id,
+                        topic=topic,
+                        payload=payload,
                         meta={"group": group, "reclaimed": True},
                     )
-            resp = await self._redis.xreadgroup(
-                group, consumer, {topic: ">"}, count=16, block=block_ms
+            resp = cast(
+                list[tuple[str, list[tuple[str, dict[str, str]]]]],
+                await self._redis.xreadgroup(group, consumer, {topic: ">"}, count=16, block=block_ms),
             )
             if not resp:
                 continue

@@ -1,16 +1,17 @@
 """In-process bus backed by asyncio queues — used in unit tests and demos."""
+
 from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from typing import AsyncIterator, Dict, List
+from collections.abc import AsyncIterator
 
 from .base import BusEnvelope, MessageBus, Publishable
 
 
 class InMemoryBus(MessageBus):
     def __init__(self) -> None:
-        self._queues: Dict[str, List[asyncio.Queue]] = defaultdict(list)
+        self._queues: dict[str, list[asyncio.Queue]] = defaultdict(list)
         self._counter = 0
 
     async def publish(self, topic: str, message: Publishable) -> str:

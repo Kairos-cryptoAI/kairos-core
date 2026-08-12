@@ -4,12 +4,13 @@ Using ``str`` mixin enums keeps the wire format human-readable (the values are
 exactly what appears in the JSON on the bus) while still giving us type safety
 inside Python.
 """
+
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 
-class ReasoningEffort(str, Enum):
+class ReasoningEffort(StrEnum):
     """Logical analysis depth, mapped to a concrete provider+model in :mod:`kairos-llm`.
 
     DeepSeek-first + GPT escalation:
@@ -25,7 +26,7 @@ class ReasoningEffort(str, Enum):
     XHIGH = "xhigh"
 
 
-class RouterMode(str, Enum):
+class RouterMode(StrEnum):
     """Flag emitted by the Router selecting the Aggregator analytics contour.
 
     DeepSeek-first + GPT escalation:
@@ -37,7 +38,7 @@ class RouterMode(str, Enum):
     ROUTE_GPT = "ROUTE_GPT"
 
 
-class SystemMode(str, Enum):
+class SystemMode(StrEnum):
     """Global operating mode, owned by the Risk Manager / Circuit Breaker.
 
     Per-model Circuit Breaker degradation (severity increases downward):
@@ -53,7 +54,7 @@ class SystemMode(str, Enum):
     LOCAL_QUANT_MODE = "LOCAL_QUANT_MODE"
 
 
-class Side(str, Enum):
+class Side(StrEnum):
     """Directional bias of a signal or an open position."""
 
     LONG = "LONG"
@@ -61,26 +62,26 @@ class Side(str, Enum):
     FLAT = "FLAT"
 
 
-class OrderSide(str, Enum):
+class OrderSide(StrEnum):
     """Side of a concrete exchange order."""
 
     BUY = "BUY"
     SELL = "SELL"
 
 
-class ImpactDirection(str, Enum):
+class ImpactDirection(StrEnum):
     BULLISH = "bullish"
     BEARISH = "bearish"
     NEUTRAL = "neutral"
 
 
-class MarketRegime(str, Enum):
+class MarketRegime(StrEnum):
     BULL = "BULL"
     BEAR = "BEAR"
     CHOP = "CHOP"  # hard sideways / flat
 
 
-class TacticalStatus(str, Enum):
+class TacticalStatus(StrEnum):
     """High-level tactical state produced by the Aggregator."""
 
     STABLE_TREND_ENTRY = "STABLE_TREND_ENTRY"
@@ -91,7 +92,7 @@ class TacticalStatus(str, Enum):
     EXIT = "EXIT"
 
 
-class ReasonCode(str, Enum):
+class ReasonCode(StrEnum):
     """Machine-actionable code consumed by the Execution Engine.
 
     The Execution Engine NEVER interprets free text — it only switches on this
@@ -107,24 +108,24 @@ class ReasonCode(str, Enum):
     NO_TRADE = "NO_TRADE"
 
 
-class StrategicTrigger(str, Enum):
+class StrategicTrigger(StrEnum):
     SCHEDULE = "schedule"
     SHOCK_EVENT = "shock_event"
 
 
-class OrderType(str, Enum):
+class OrderType(StrEnum):
     MARKET = "MARKET"
     LIMIT = "LIMIT"
     STOP_LIMIT = "STOP_LIMIT"
 
 
-class TimeInForce(str, Enum):
+class TimeInForce(StrEnum):
     GTC = "GTC"  # default for limit orders
     IOC = "IOC"  # default for market orders
     FOK = "FOK"
 
 
-class OrderStatus(str, Enum):
+class OrderStatus(StrEnum):
     NEW = "NEW"
     PARTIALLY_FILLED = "PARTIALLY_FILLED"
     FILLED = "FILLED"

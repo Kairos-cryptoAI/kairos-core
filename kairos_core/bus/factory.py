@@ -1,4 +1,5 @@
 """Build the configured bus backend from settings."""
+
 from __future__ import annotations
 
 from ..config import CoreSettings
