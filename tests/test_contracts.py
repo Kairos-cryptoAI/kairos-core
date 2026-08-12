@@ -186,7 +186,7 @@ def test_llm_health_event_round_trip_and_outage_flag():
     again = LLMHealthEvent.from_json(bad.to_json())
     assert again.model == "deepseek-v4-flash"
     assert again.is_outage is True
-    healthy = LLMHealthEvent(source="aggregator", provider="openai", model="gpt-5.5", ok=True)
+    healthy = LLMHealthEvent(source="aggregator", provider="openai", model="gpt-5.6-sol", ok=True)
     assert healthy.is_outage is False
-    bad_output = LLMHealthEvent(source="x", provider="openai", model="gpt-5.5", ok=False, kind="error")
+    bad_output = LLMHealthEvent(source="x", provider="openai", model="gpt-5.6-sol", ok=False, kind="error")
     assert bad_output.is_outage is False  # API answered -> must not trip the breaker

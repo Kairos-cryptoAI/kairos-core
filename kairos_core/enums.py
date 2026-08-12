@@ -16,8 +16,8 @@ class ReasoningEffort(StrEnum):
     DeepSeek-first + GPT escalation:
       * ``LOW``    — DeepSeek-V4-Flash, non-thinking (Text Scouts; no reasoning effort).
       * ``MEDIUM`` — DeepSeek-V4-Pro (Aggregator, calm market).
-      * ``HIGH``   — GPT-5.5, ``reasoning.effort=high`` (Aggregator, signal conflict).
-      * ``XHIGH``  — GPT-5.5, ``reasoning.effort=xhigh`` (Macro-Strategist).
+      * ``HIGH``   — GPT-5.6 Sol, ``reasoning.effort=high`` (Aggregator, signal conflict).
+      * ``XHIGH``  — GPT-5.6 Sol, ``reasoning.effort=xhigh`` (Macro-Strategist).
     """
 
     LOW = "low"
@@ -31,7 +31,7 @@ class RouterMode(StrEnum):
 
     DeepSeek-first + GPT escalation:
       * ``ROUTE_PRO`` — routine flow on DeepSeek-V4-Pro (calm market, signals agree).
-      * ``ROUTE_GPT`` — escalation to GPT-5.5 (signal conflict, high cost of error).
+      * ``ROUTE_GPT`` — escalation to GPT-5.6 Sol (signal conflict, high cost of error).
     """
 
     ROUTE_PRO = "ROUTE_PRO"
@@ -44,7 +44,7 @@ class SystemMode(StrEnum):
     Per-model Circuit Breaker degradation (severity increases downward):
       * ``NORMAL`` — all analytics layers healthy.
       * ``TEXT_LOCAL_FILTER`` — DeepSeek-V4-Flash down; Text Scouts filter locally.
-      * ``CONFLICT_SAFE`` — GPT-5.5 down; conflict decisions forced to WAIT_CONFIRMATION.
+      * ``CONFLICT_SAFE`` — GPT-5.6 down; conflict decisions forced to WAIT_CONFIRMATION.
       * ``LOCAL_QUANT_MODE`` — several models down; local stop-loss scripts only.
     """
 
