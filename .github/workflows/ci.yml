@@ -5,12 +5,57 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  quality:
+    name: Python ${{ matrix.python-version }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.14"
+          - os: windows-latest
+            python-version: "3.11"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Sync locked environment
+        run: uv sync --locked
+      - name: Lint
+        run: uv run --locked ruff check kairos_core tests
+      - name: Check formatting
+        run: uv run --locked ruff format --check kairos_core tests
+      - name: Type check
+        run: uv run --locked mypy kairos_core
+      - name: Security scan
+        run: uv run --locked bandit -q -r kairos_core -x tests
+      - name: Test
+        run: uv run --locked pytest -q --tb=short
+      - name: Build wheel and source distribution
+        run: uv build --no-sources
+
+  redis-integration:
+    name: Redis 8.2 integration
     runs-on: ubuntu-latest
     services:
       redis:
-        image: redis:7.4-alpine
+        image: redis:8.2.8-alpine3.22
         ports:
           - 6379:6379
         options: >-
@@ -21,15 +66,15 @@ jobs:
     env:
       KAIROS_TEST_REDIS_URL: redis://localhost:6379/15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Check out source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           python-version: "3.11"
-      - name: Install
-        run: pip install -e ".[dev]"
-      - name: Lint
-        run: ruff check kairos_core tests
-      - name: Type check
-        run: mypy kairos_core
-      - name: Test
-        run: pytest -q
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Sync locked environment
+        run: uv sync --locked
+      - name: Run Redis integration tests
+        run: uv run --locked pytest -q --tb=short tests/test_bus_redis_integration.py

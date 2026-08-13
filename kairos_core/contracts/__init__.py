@@ -1,26 +1,38 @@
 """Typed, versioned messages exchanged on the Kairos bus."""
+
 from __future__ import annotations
 
 from .account import AccountSnapshot, PositionSnapshot
-from .base import KairosMessage, SCHEMA_VERSION
+from .base import SCHEMA_VERSION, KairosMessage
+from .execution import ExecutionReport, OrderIntent, ValidatedOrder
+from .health import LLMHealthEvent
 from .market import (
+    DerivativesMetrics,
     MarketSnapshot,
     OrderBookSummary,
-    DerivativesMetrics,
     TechnicalIndicators,
 )
-from .sentiment import SentimentSignal
 from .routing import RouterDecision
-from .tactical import TacticalCommand, GridAdjustment
+from .sentiment import SentimentSignal
 from .strategic import StrategicAllocation
-from .execution import OrderIntent, ValidatedOrder, ExecutionReport
-from .health import LLMHealthEvent
+from .tactical import GridAdjustment, TacticalCommand
 
 __all__ = [
-    "AccountSnapshot", "PositionSnapshot",
-    "KairosMessage", "SCHEMA_VERSION",
-    "MarketSnapshot", "OrderBookSummary", "DerivativesMetrics", "TechnicalIndicators",
-    "SentimentSignal", "RouterDecision", "TacticalCommand", "GridAdjustment",
-    "StrategicAllocation", "OrderIntent", "ValidatedOrder", "ExecutionReport",
+    "AccountSnapshot",
+    "PositionSnapshot",
+    "KairosMessage",
+    "SCHEMA_VERSION",
+    "MarketSnapshot",
+    "OrderBookSummary",
+    "DerivativesMetrics",
+    "TechnicalIndicators",
+    "SentimentSignal",
+    "RouterDecision",
+    "TacticalCommand",
+    "GridAdjustment",
+    "StrategicAllocation",
+    "OrderIntent",
+    "ValidatedOrder",
+    "ExecutionReport",
     "LLMHealthEvent",
 ]

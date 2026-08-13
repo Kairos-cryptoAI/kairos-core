@@ -5,15 +5,16 @@ are responsible for validating payloads back into the right
 :class:`~kairos_core.contracts.base.KairosMessage` subclass. This keeps the
 core free of any per-message-type coupling.
 """
+
 from __future__ import annotations
 
 import abc
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Union
 
 from ..contracts.base import KairosMessage
 
-Publishable = Union[KairosMessage, dict]
+Publishable = KairosMessage | dict
 
 
 @dataclass(slots=True)

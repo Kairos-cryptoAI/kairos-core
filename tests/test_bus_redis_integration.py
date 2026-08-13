@@ -1,4 +1,5 @@
 """Real Redis Streams integration tests, enabled when KAIROS_TEST_REDIS_URL is set."""
+
 from __future__ import annotations
 
 import asyncio
@@ -26,8 +27,12 @@ def test_real_redis_publish_consume_ack_and_crash_reclaim():
             message_id = await producer.publish(topic, {"message_id": "logical-1", "value": 42})
 
             first = crashed.subscribe(
-                topic, group=group, consumer="crashed", block_ms=50,
-                reclaim_idle_ms=10_000, reclaim_every_s=60,
+                topic,
+                group=group,
+                consumer="crashed",
+                block_ms=50,
+                reclaim_idle_ms=10_000,
+                reclaim_every_s=60,
             )
             envelope = await asyncio.wait_for(anext(first), timeout=2)
             assert envelope.id == message_id
@@ -36,8 +41,12 @@ def test_real_redis_publish_consume_ack_and_crash_reclaim():
 
             await asyncio.sleep(0.03)
             second = recovery.subscribe(
-                topic, group=group, consumer="recovery", block_ms=50,
-                reclaim_idle_ms=1, reclaim_every_s=0,
+                topic,
+                group=group,
+                consumer="recovery",
+                block_ms=50,
+                reclaim_idle_ms=1,
+                reclaim_every_s=0,
             )
             reclaimed = await asyncio.wait_for(anext(second), timeout=2)
             assert reclaimed.id == message_id

@@ -1,4 +1,5 @@
 """Authoritative exchange account and position snapshots."""
+
 from __future__ import annotations
 
 from datetime import datetime

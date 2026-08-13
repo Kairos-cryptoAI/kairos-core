@@ -1,15 +1,16 @@
 """Round-trip and validation tests for the message contracts."""
+
 import pytest
 from pydantic import ValidationError
 
 from kairos_core import (
+    DerivativesMetrics,
     MarketSnapshot,
     OrderBookSummary,
-    DerivativesMetrics,
-    TechnicalIndicators,
     SentimentSignal,
     StrategicAllocation,
     TacticalCommand,
+    TechnicalIndicators,
 )
 from kairos_core.enums import ImpactDirection, MarketRegime, ReasonCode, Side, TacticalStatus
 
@@ -54,15 +55,25 @@ def test_sentiment_bounds_enforced():
 
 
 def test_message_schema_minor_and_correlation_are_backward_compatible():
-    legacy = SentimentSignal.model_validate({
-        "schema_version": "1.0", "source": "text", "topic": "ETF",
-        "sentiment": 0.2, "impact": "bullish",
-    })
+    legacy = SentimentSignal.model_validate(
+        {
+            "schema_version": "1.0",
+            "source": "text",
+            "topic": "ETF",
+            "sentiment": 0.2,
+            "impact": "bullish",
+        }
+    )
     assert legacy.correlation_id is None
-    upgraded = SentimentSignal.model_validate({
-        **legacy.to_payload(), "schema_version": "1.9",
-        "correlation_id": "trace-1", "causation_id": "parent-1", "future_field": "ignored",
-    })
+    upgraded = SentimentSignal.model_validate(
+        {
+            **legacy.to_payload(),
+            "schema_version": "1.9",
+            "correlation_id": "trace-1",
+            "causation_id": "parent-1",
+            "future_field": "ignored",
+        }
+    )
     assert upgraded.correlation_id == "trace-1"
     assert upgraded.causation_id == "parent-1"
 
@@ -71,21 +82,29 @@ def test_message_schema_minor_and_correlation_are_backward_compatible():
 def test_message_rejects_incompatible_or_malformed_schema(version):
     with pytest.raises(ValidationError):
         SentimentSignal(
-            schema_version=version, source="text", topic="ETF",
-            sentiment=0.2, impact=ImpactDirection.BULLISH,
+            schema_version=version,
+            source="text",
+            topic="ETF",
+            sentiment=0.2,
+            impact=ImpactDirection.BULLISH,
         )
 
 
 def test_tactical_command_reference_price_is_backward_compatible_and_bounded():
     legacy = TacticalCommand(
-        source="aggregator", symbol="BTCUSDT", status=TacticalStatus.WAIT_CONFIRMATION,
+        source="aggregator",
+        symbol="BTCUSDT",
+        status=TacticalStatus.WAIT_CONFIRMATION,
         reason_code=ReasonCode.NO_TRADE,
     )
     assert legacy.reference_price == 0.0
     with pytest.raises(ValidationError):
         TacticalCommand(
-            source="aggregator", symbol="BTCUSDT", reference_price=-1.0,
-            status=TacticalStatus.WAIT_CONFIRMATION, reason_code=ReasonCode.NO_TRADE,
+            source="aggregator",
+            symbol="BTCUSDT",
+            reference_price=-1.0,
+            status=TacticalStatus.WAIT_CONFIRMATION,
+            reason_code=ReasonCode.NO_TRADE,
         )
 
 
@@ -94,15 +113,24 @@ def test_execution_contract_additions_are_backward_compatible():
     from kairos_core.enums import OrderSide, OrderStatus, OrderType
 
     legacy_intent = OrderIntent(
-        source="risk", symbol="BTCUSDT", side=OrderSide.BUY,
-        order_type=OrderType.LIMIT, quantity=0.1, price=65_000,
+        source="risk",
+        symbol="BTCUSDT",
+        side=OrderSide.BUY,
+        order_type=OrderType.LIMIT,
+        quantity=0.1,
+        price=65_000,
         reason_code=ReasonCode.ENTER_LONG_TREND,
     )
     assert legacy_intent.client_order_id is None
     report = ExecutionReport(
-        source="execution", client_order_id="client-123", symbol="BTCUSDT",
-        side=OrderSide.BUY, status=OrderStatus.PARTIALLY_FILLED,
-        requested_qty=0.1, filled_qty=0.04, remaining_qty=0.06,
+        source="execution",
+        client_order_id="client-123",
+        symbol="BTCUSDT",
+        side=OrderSide.BUY,
+        status=OrderStatus.PARTIALLY_FILLED,
+        requested_qty=0.1,
+        filled_qty=0.04,
+        remaining_qty=0.06,
     )
     assert report.remaining_qty == pytest.approx(0.06)
     assert report.exchange_updated_at.tzinfo is not None
@@ -112,13 +140,22 @@ def test_account_snapshot_carries_signed_positions_and_reconciliation_state():
     from kairos_core.contracts import AccountSnapshot, PositionSnapshot
 
     position = PositionSnapshot(
-        source="execution", exchange="evedex", account_id="primary",
-        symbol="BTCUSD", signed_quantity=-0.2, entry_price=65_000,
+        source="execution",
+        exchange="evedex",
+        account_id="primary",
+        symbol="BTCUSD",
+        signed_quantity=-0.2,
+        entry_price=65_000,
     )
     snapshot = AccountSnapshot(
-        source="execution", exchange="evedex", account_id="primary",
-        equity_usd=10_200, available_balance_usd=8_000,
-        peak_equity_usd=10_500, positions=[position], reconciled=True,
+        source="execution",
+        exchange="evedex",
+        account_id="primary",
+        equity_usd=10_200,
+        available_balance_usd=8_000,
+        peak_equity_usd=10_500,
+        positions=[position],
+        reconciled=True,
     )
     restored = AccountSnapshot.from_json(snapshot.to_json())
     assert restored.positions[0].signed_quantity == -0.2
@@ -137,12 +174,19 @@ def test_allocation_weights_cannot_exceed_one():
 
 def test_llm_health_event_round_trip_and_outage_flag():
     from kairos_core.contracts import LLMHealthEvent
-    bad = LLMHealthEvent(source="text-scouts", provider="deepseek",
-                         model="deepseek-v4-flash", ok=False, kind="timeout", latency_s=20.0)
+
+    bad = LLMHealthEvent(
+        source="text-scouts",
+        provider="deepseek",
+        model="deepseek-v4-flash",
+        ok=False,
+        kind="timeout",
+        latency_s=20.0,
+    )
     again = LLMHealthEvent.from_json(bad.to_json())
     assert again.model == "deepseek-v4-flash"
     assert again.is_outage is True
-    healthy = LLMHealthEvent(source="aggregator", provider="openai", model="gpt-5.5", ok=True)
+    healthy = LLMHealthEvent(source="aggregator", provider="openai", model="gpt-5.6-sol", ok=True)
     assert healthy.is_outage is False
-    bad_output = LLMHealthEvent(source="x", provider="openai", model="gpt-5.5", ok=False, kind="error")
+    bad_output = LLMHealthEvent(source="x", provider="openai", model="gpt-5.6-sol", ok=False, kind="error")
     assert bad_output.is_outage is False  # API answered -> must not trip the breaker

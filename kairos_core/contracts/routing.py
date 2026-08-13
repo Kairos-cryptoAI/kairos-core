@@ -1,7 +1,6 @@
 """Router output — how much analytical effort the Aggregator should spend."""
-from __future__ import annotations
 
-from typing import List, Optional
+from __future__ import annotations
 
 from pydantic import Field
 
@@ -18,5 +17,5 @@ class RouterDecision(KairosMessage):
     quant_bias: Side = Side.FLAT
     text_bias: Side = Side.FLAT
     rationale: str = ""
-    snapshot_id: Optional[str] = None
-    sentiment_ids: List[str] = Field(default_factory=list)
+    snapshot_id: str | None = None
+    sentiment_ids: list[str] = Field(default_factory=list)

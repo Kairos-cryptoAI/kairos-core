@@ -3,11 +3,11 @@
 Each service subclasses :class:`CoreSettings` to add its own keys. All keys are
 read from the environment with the ``KAIROS_`` prefix (and an optional .env).
 """
+
 from __future__ import annotations
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
 
 DEFAULT_TRADING_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]
 
@@ -30,7 +30,7 @@ class CoreSettings(BaseSettings):
         extra="ignore",
     )
 
-    environment: str = "dev"          # dev | staging | prod
+    environment: str = "dev"  # dev | staging | prod
     service_name: str = "kairos-service"
     log_level: str = "INFO"
     log_json: bool = True
@@ -45,5 +45,5 @@ class CoreSettings(BaseSettings):
         return symbol.strip().upper() in self.trading_symbols
 
     # bus
-    bus_backend: str = "redis"        # redis | memory
+    bus_backend: str = "redis"  # redis | memory
     redis_url: str = "redis://localhost:6379/0"

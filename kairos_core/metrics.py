@@ -1,9 +1,10 @@
 """Prometheus metrics registry and shared instrumentation."""
+
 from __future__ import annotations
 
 import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 from prometheus_client import (
     CollectorRegistry,

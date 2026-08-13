@@ -1,7 +1,8 @@
 """Envelope base class for every message that travels on the bus."""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -12,7 +13,7 @@ SUPPORTED_SCHEMA_MAJOR = 1
 
 def utcnow() -> datetime:
     """Timezone-aware UTC now (never use naive datetimes on the wire)."""
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class KairosMessage(BaseModel):
@@ -36,9 +37,7 @@ class KairosMessage(BaseModel):
     correlation_id: str | None = Field(
         default=None, description="Stable ID linking all messages in one decision/execution trace."
     )
-    causation_id: str | None = Field(
-        default=None, description="message_id of the immediate upstream event."
-    )
+    causation_id: str | None = Field(default=None, description="message_id of the immediate upstream event.")
     produced_at: datetime = Field(default_factory=utcnow)
     source: str = Field(..., description="Service that produced this message, e.g. 'quant-scouts'.")
 

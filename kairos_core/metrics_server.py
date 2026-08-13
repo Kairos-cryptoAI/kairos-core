@@ -1,4 +1,5 @@
 """aiohttp /metrics endpoint for Prometheus scraping."""
+
 from __future__ import annotations
 
 import asyncio
@@ -20,12 +21,12 @@ def create_metrics_app(port: int = 9100) -> web.Application:
     return app
 
 
-async def run_metrics_server(port: int = 9100) -> None:
+async def run_metrics_server(port: int = 9100, *, host: str = "127.0.0.1") -> None:
     """Run the metrics HTTP server in the background."""
     app = create_metrics_app(port)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
+    site = web.TCPSite(runner, host, port)
     await site.start()
     # Keep the server running indefinitely; parent service handles shutdown.
     await asyncio.Event().wait()

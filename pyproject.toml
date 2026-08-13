@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.28,<2"]
 build-backend = "hatchling.build"
 
 [project]
@@ -11,20 +11,27 @@ license = { text = "MIT" }
 requires-python = ">=3.11"
 authors = [{ name = "TheLitis" }]
 dependencies = [
-    "pydantic>=2.6",
-    "pydantic-settings>=2.2",
-    "redis>=5.0",
-    "structlog>=24.1",
-    "orjson>=3.9",
+    "aiohttp>=3.10,<4",
+    "orjson>=3.9,<4",
+    "prometheus-client>=0.21,<1",
+    "pydantic>=2.6,<3",
+    "pydantic-settings>=2.2,<3",
+    "redis>=6.4,<9",
+    "structlog>=24.1,<27",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
+    "bandit>=1.8,<2",
+    "build>=1.2,<2",
+    "mypy>=1.10,<3",
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
-    "ruff>=0.4",
-    "mypy>=1.10",
+    "ruff>=0.16,<0.17",
 ]
+
+[tool.uv]
+required-version = "==0.12.3"
 
 [tool.hatch.build.targets.wheel]
 packages = ["kairos_core"]
