@@ -13,7 +13,7 @@ from .base import KairosMessage
 
 class LLMHealthEvent(KairosMessage):
     provider: str  # "deepseek" | "openai"
-    model: str  # e.g. "deepseek-v4-flash", "deepseek-v4-pro", "gpt-5.6-sol"
+    model: str  # e.g. "deepseek-v4-flash", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"
     ok: bool  # True on success; False on a failed call
     kind: str = "ok"  # "ok" | "5xx" | "timeout" | "error"
     latency_s: float = 0.0

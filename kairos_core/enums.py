@@ -13,10 +13,10 @@ from enum import StrEnum
 class ReasoningEffort(StrEnum):
     """Logical analysis depth, mapped to a concrete provider+model in :mod:`kairos-llm`.
 
-    DeepSeek-first + GPT escalation:
+    Workload-specific routing (the enum remains a provider-neutral wire value):
       * ``LOW``    — DeepSeek-V4-Flash, non-thinking (Text Scouts; no reasoning effort).
-      * ``MEDIUM`` — DeepSeek-V4-Pro (Aggregator, calm market).
-      * ``HIGH``   — GPT-5.6 Sol, ``reasoning.effort=high`` (Aggregator, signal conflict).
+      * ``MEDIUM`` — GPT-5.6 Luna, ``reasoning.effort=medium`` (Aggregator normal path).
+      * ``HIGH``   — GPT-5.6 Terra, ``reasoning.effort=high`` (Aggregator conflict path).
       * ``XHIGH``  — GPT-5.6 Sol, ``reasoning.effort=xhigh`` (Macro-Strategist).
     """
 
@@ -29,9 +29,9 @@ class ReasoningEffort(StrEnum):
 class RouterMode(StrEnum):
     """Flag emitted by the Router selecting the Aggregator analytics contour.
 
-    DeepSeek-first + GPT escalation:
-      * ``ROUTE_PRO`` — routine flow on DeepSeek-V4-Pro (calm market, signals agree).
-      * ``ROUTE_GPT`` — escalation to GPT-5.6 Sol (signal conflict, high cost of error).
+    The historical wire names are retained for compatibility:
+      * ``ROUTE_PRO`` — routine Aggregator flow on GPT-5.6 Luna.
+      * ``ROUTE_GPT`` — conflict escalation to GPT-5.6 Terra.
     """
 
     ROUTE_PRO = "ROUTE_PRO"
