@@ -204,6 +204,7 @@ class PositionSnapshotV2(StrictValueModel):
             TradeLifecycleState.EXITING_STOP,
             TradeLifecycleState.EXITING_TARGET,
             TradeLifecycleState.EXITING_TIMEOUT,
+            TradeLifecycleState.EXITING_EMERGENCY,
             TradeLifecycleState.FAILED_BLOCKED,
         }:
             raise ValueError("active position has an incompatible lifecycle_state")
@@ -214,6 +215,7 @@ class PositionSnapshotV2(StrictValueModel):
                 TradeLifecycleState.EXITING_STOP,
                 TradeLifecycleState.EXITING_TARGET,
                 TradeLifecycleState.EXITING_TIMEOUT,
+                TradeLifecycleState.EXITING_EMERGENCY,
             }
             and self.stop_client_order_id is None
         ):

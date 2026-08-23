@@ -172,6 +172,19 @@ def test_account_snapshot_carries_complete_durable_lineage() -> None:
     assert AccountSnapshotV2.from_json(snapshot.to_json()) == snapshot
 
 
+def test_emergency_exit_state_preserves_protective_stop_and_lineage() -> None:
+    position = _position(lifecycle_state=TradeLifecycleState.EXITING_EMERGENCY)
+    event = _event(
+        event_type=TradeExecutionEventType.EMERGENCY_CLOSE,
+        lifecycle_state=TradeLifecycleState.EXITING_EMERGENCY,
+        exit_reason=TradeExitReason.EMERGENCY,
+    )
+
+    assert position.stop_client_order_id == "stop-order-00001"
+    assert event.trade_id == position.trade_id
+    assert event.lifecycle_state is TradeLifecycleState.EXITING_EMERGENCY
+
+
 @pytest.mark.parametrize(
     "override",
     [
