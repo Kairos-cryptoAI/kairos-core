@@ -18,7 +18,7 @@ Scouts ─▶ Router ─▶ Aggregator ─▶ Macro-Strategist ─▶ Risk Manag
 | Module | Purpose |
 | --- | --- |
 | `kairos_core.enums` | `ReasoningEffort`, `RouterMode`, `SystemMode`, `ReasonCode`, ... |
-| `kairos_core.contracts` | Pydantic v2 messages: `MarketSnapshot`, `SentimentSignal`, `RouterDecision`, `TacticalCommand`, `StrategicAllocation`, `OrderIntent`, `ValidatedOrder`, `ExecutionReport` |
+| `kairos_core.contracts` | Legacy DRY_RUN messages plus strict Strategy Parity / PAPER contracts |
 | `kairos_core.bus` | Transport-agnostic `MessageBus` with `RedisStreamsBus` (prod) and `InMemoryBus` (tests) backends |
 | `kairos_core.topics` | Canonical bus topic names (`kairos.<layer>.<event>`) |
 | `kairos_core.config` | `CoreSettings` (env-driven, `KAIROS_` prefix) |
@@ -30,12 +30,45 @@ before every group has acknowledged them.
 
 ## Design rules
 
-1. **The LLM never sees raw numbers.** Layer 1 digests the market into a `MarketSnapshot`
-   before anything else reads it.
-2. **Messages are versioned.** Every message carries `schema_version`; consumers ignore
-   unknown fields so services can be deployed independently.
+1. **The LLM never sees raw streams.** It receives only compact typed strategy,
+   market and evidence fields; exchange credentials and unbounded feeds stay outside
+   the analytical context.
+2. **Messages are versioned.** Legacy messages carry `schema_version` and ignore unknown
+   minor fields. Safety-critical Strategy Parity / PAPER contracts also carry a concrete
+   `contract_version`, reject unknown fields, reject non-finite numbers and are immutable.
 3. **The bus is dumb.** It moves JSON between topics; services validate payloads back into
    the right contract. No per-message coupling in the transport.
+
+## Strategy Parity and PAPER contracts
+
+The new route is deliberately separate from the legacy
+`TacticalCommand -> ValidatedOrder` DRY_RUN route:
+
+```text
+ClosedBarEventV1 -> StrategyIntentV1 -> CandidateRouteV1
+    -> CandidateReviewV1 -> VenueQualityV1 + RiskTradeDecisionV1
+    -> TradeExecutionEventV1 -> AccountSnapshotV2
+```
+
+- `ClosedBarEventV1` hashes the complete final Binance USD-M 1m OHLCV payload,
+  including quote and taker-buy volumes.
+- `StrategyIntentV1` owns side, eligibility/expiry and the immutable
+  `ExitPlanV1` (`stop-target-timeout.v1`). Its ID covers code, configuration,
+  input-window and feature fingerprints.
+- `CandidateRouteV1` requests only the normal (`medium`) or conflict (`high`)
+  review tier. `CandidateReviewV1` can only return `ALLOW`, `VETO` or `DEFER`.
+- `VenueQualityV1` records the executable EVEDEX book, basis, spread, depth,
+  side-specific slippage, fee and freshness inputs used by risk.
+- `RiskTradeDecisionV1` proves loss-at-stop sizing and rejects mismatched
+  intent, exit plan, account, profile, symbol or stale venue data. PAPER is
+  valid only on EVEDEX DEV instruments ending in `:DEV`.
+- `TradeExecutionEventV1` and `AccountSnapshotV2` preserve strategy, intent,
+  risk decision, trade, effect and order-role lineage for recovery and audit.
+
+`canonical_json_bytes()` uses sorted compact UTF-8 JSON and normalises negative
+zero. Producers can use `canonical_sha256()` for auxiliary configuration and
+feature fingerprints. With deterministic inputs, the default message envelope,
+wire bytes and identity are identical across Windows research and Linux runtime.
 
 ## Local development
 

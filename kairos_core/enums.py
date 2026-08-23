@@ -131,3 +131,94 @@ class OrderStatus(StrEnum):
     FILLED = "FILLED"
     CANCELED = "CANCELED"
     REJECTED = "REJECTED"
+
+
+class ReviewDecision(StrEnum):
+    """The only changes an LLM review may make to a strategy candidate."""
+
+    ALLOW = "ALLOW"
+    VETO = "VETO"
+    DEFER = "DEFER"
+
+
+class CandidateReviewTier(StrEnum):
+    """Aggregator path selected by the deterministic candidate router."""
+
+    NORMAL = "NORMAL"
+    CONFLICT = "CONFLICT"
+
+
+class EntryPolicy(StrEnum):
+    """Deterministic runtime entry semantics owned by the strategy contract."""
+
+    NEXT_BAR_MARKET = "NEXT_BAR_MARKET"
+
+
+class TradingMode(StrEnum):
+    """Execution authority; legacy booleans must never be mapped to LIVE."""
+
+    DRY_RUN = "DRY_RUN"
+    PAPER = "PAPER"
+    LIVE = "LIVE"
+
+
+class EvedexProfile(StrEnum):
+    """Official EVEDEX deployment profiles."""
+
+    DEV = "DEV"
+    DEMO = "DEMO"
+    PROD = "PROD"
+
+
+class TradeLifecycleState(StrEnum):
+    """Durable state machine for a protected PAPER trade."""
+
+    RECEIVED = "RECEIVED"
+    ENTRY_PENDING = "ENTRY_PENDING"
+    PROTECTING = "PROTECTING"
+    ACTIVE = "ACTIVE"
+    EXITING_STOP = "EXITING_STOP"
+    EXITING_TARGET = "EXITING_TARGET"
+    EXITING_TIMEOUT = "EXITING_TIMEOUT"
+    FLAT = "FLAT"
+    CANCELLED = "CANCELLED"
+    FAILED_BLOCKED = "FAILED_BLOCKED"
+
+
+class TradeExecutionEventType(StrEnum):
+    """Append-only facts that move a trade through its lifecycle."""
+
+    DECISION_RECEIVED = "DECISION_RECEIVED"
+    EFFECT_PREPARED = "EFFECT_PREPARED"
+    VENUE_ACK = "VENUE_ACK"
+    ENTRY_PARTIAL_FILL = "ENTRY_PARTIAL_FILL"
+    ENTRY_FILLED = "ENTRY_FILLED"
+    ENTRY_CANCELLED = "ENTRY_CANCELLED"
+    STOP_CREATED = "STOP_CREATED"
+    STOP_RECONCILED = "STOP_RECONCILED"
+    TARGET_CREATED = "TARGET_CREATED"
+    TARGET_RECONCILED = "TARGET_RECONCILED"
+    EXIT_TRIGGERED = "EXIT_TRIGGERED"
+    EXIT_FILLED = "EXIT_FILLED"
+    RECONCILIATION = "RECONCILIATION"
+    RECOVERY_BLOCKED = "RECOVERY_BLOCKED"
+    EMERGENCY_CLOSE = "EMERGENCY_CLOSE"
+    FAILED = "FAILED"
+
+
+class OrderRole(StrEnum):
+    """Stable role of an order in one trade lineage."""
+
+    ENTRY = "ENTRY"
+    STOP_LOSS = "STOP_LOSS"
+    TAKE_PROFIT = "TAKE_PROFIT"
+    TIMEOUT_EXIT = "TIMEOUT_EXIT"
+    EMERGENCY_EXIT = "EMERGENCY_EXIT"
+
+
+class TradeExitReason(StrEnum):
+    STOP = "STOP"
+    TARGET = "TARGET"
+    TIMEOUT = "TIMEOUT"
+    EMERGENCY = "EMERGENCY"
+    CANCELLED = "CANCELLED"
