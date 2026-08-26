@@ -2,12 +2,18 @@
 
 import asyncio
 import json
+from unittest.mock import patch
 
 import pytest
 
 pytest.importorskip("redis")
 
-from kairos_core.bus.redis_streams import RedisStreamsBus  # noqa: E402
+from kairos_core.bus.redis_streams import (  # noqa: E402
+    DEFAULT_BLOCK_MS,
+    REDIS_SOCKET_CONNECT_TIMEOUT_S,
+    REDIS_SOCKET_TIMEOUT_S,
+    RedisStreamsBus,
+)
 
 
 class FakeRedis:
@@ -56,6 +62,19 @@ def _bus_with_fake():
     bus._reclaim_cursors = {}
     bus._instance_id = "test-instance"
     return bus
+
+
+def test_constructor_keeps_socket_timeout_above_blocking_read():
+    with patch("kairos_core.bus.redis_streams.aioredis.from_url") as from_url:
+        RedisStreamsBus("redis://redis:6379/0")
+
+    from_url.assert_called_once_with(
+        "redis://redis:6379/0",
+        decode_responses=True,
+        socket_connect_timeout=REDIS_SOCKET_CONNECT_TIMEOUT_S,
+        socket_timeout=REDIS_SOCKET_TIMEOUT_S,
+    )
+    assert REDIS_SOCKET_TIMEOUT_S > DEFAULT_BLOCK_MS / 1_000
 
 
 def test_subscribe_reclaims_stale_pending_messages_first():

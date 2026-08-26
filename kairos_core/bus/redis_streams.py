@@ -19,10 +19,23 @@ from redis.exceptions import ResponseError
 
 from .base import BusEnvelope, MessageBus, Publishable
 
+DEFAULT_BLOCK_MS = 5_000
+REDIS_SOCKET_CONNECT_TIMEOUT_S = 5.0
+REDIS_SOCKET_TIMEOUT_S = 15.0
+
 
 class RedisStreamsBus(MessageBus):
     def __init__(self, url: str = "redis://localhost:6379/0", *, maxlen: int = 10_000) -> None:
-        self._redis = aioredis.from_url(url, decode_responses=True)
+        # redis-py 8 defaults its socket read timeout to five seconds, which is
+        # also the default XREADGROUP blocking interval below.  That race makes
+        # an idle, healthy stream look disconnected and restarts consumers.
+        # Keep the transport timeout explicit and comfortably above the block.
+        self._redis = aioredis.from_url(
+            url,
+            decode_responses=True,
+            socket_connect_timeout=REDIS_SOCKET_CONNECT_TIMEOUT_S,
+            socket_timeout=REDIS_SOCKET_TIMEOUT_S,
+        )
         self._maxlen = maxlen
         self._groups_ready: set[tuple[str, str]] = set()
         self._reclaim_cursors: dict[tuple[str, str], str] = {}
@@ -95,7 +108,7 @@ class RedisStreamsBus(MessageBus):
         *,
         group: str | None = None,
         consumer: str | None = None,
-        block_ms: int = 5000,
+        block_ms: int = DEFAULT_BLOCK_MS,
         reclaim_idle_ms: int = 180_000,
         reclaim_every_s: float = 30.0,
     ) -> AsyncIterator[BusEnvelope]:
