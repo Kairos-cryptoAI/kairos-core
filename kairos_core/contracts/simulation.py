@@ -43,6 +43,10 @@ SimulationEventType = Literal[
     "FLAT",
     "UNRESOLVED",
 ]
+SimulationTradeState = Literal["PENDING", "ACTIVE", "FLAT", "UNRESOLVED", "NO_FILL", "BLOCKED"]
+SimulationCommandKind = Literal["ENTRY_IOC", "STOP_EXIT_IOC", "TARGET_EXIT_IOC", "TIMEOUT_EXIT_IOC"]
+SimulationReceiptStatus = Literal["FILLED", "PARTIAL", "NO_FILL", "BLOCKED"]
+SimulationSessionReceiptState = Literal["COMPLETED", "BLOCKED"]
 
 
 def _normalized_identifier(value: str, *, name: str, uppercase: bool = False) -> str:
@@ -70,7 +74,13 @@ class RecordedBookLevelV1(StrictValueModel):
 
 
 class RecordedTopNBookFrameV1(StrictKairosMessage):
-    """Hash-chained recorded book frame, not proof of an observed venue fill."""
+    """Hash-chained recorded book frame, not proof of an observed venue fill.
+
+    ``tape_sequence`` is one monotonically increasing sequence for the entire
+    tape, across every symbol.  This intentionally gives an offline replay a
+    single total order; a per-symbol execution controller may still retain its
+    own causal cursor after selecting frames for its symbol.
+    """
 
     contract_version: Literal["sim-book-frame.v1"] = "sim-book-frame.v1"
     execution_environment: Literal["SIMULATED"] = "SIMULATED"
@@ -482,4 +492,580 @@ class SimulationResultV1(StrictKairosMessage):
             "trade_id": self.trade_id,
             "trial15_eligible": self.trial15_eligible,
             "venue_execution_observed": self.venue_execution_observed,
+        }
+
+
+class SimulationChainHeadV1(StrictValueModel):
+    """One immutable per-symbol closed-bar chain head captured when a tape seals."""
+
+    symbol: SimulationSymbol
+    entry_count: NonNegativeInt
+    head_sha256: Sha256Hex | None = None
+
+    @model_validator(mode="after")
+    def validate_head(self) -> Self:
+        if (self.entry_count == 0) != (self.head_sha256 is None):
+            raise ValueError("an empty simulation chain must not claim a head hash")
+        return self
+
+
+class SimulationBookChainHeadV1(StrictValueModel):
+    """The globally ordered recorded-book chain head captured when a tape seals."""
+
+    entry_count: NonNegativeInt
+    head_sha256: Sha256Hex | None = None
+
+    @model_validator(mode="after")
+    def validate_head(self) -> Self:
+        if (self.entry_count == 0) != (self.head_sha256 is None):
+            raise ValueError("an empty simulation book chain must not claim a head hash")
+        return self
+
+
+class SimulationTapeSealV1(StrictKairosMessage):
+    """Frozen manifest for the only inputs an offline simulator may replay.
+
+    The bar chains are independently contiguous per symbol.  The book chain is
+    deliberately global across the tape, so frames from the five symbols have
+    one auditable total order.  A session must reference this exact hash rather
+    than a mutable directory or a live market-data endpoint.
+    """
+
+    contract_version: Literal["simulation-tape-seal.v1"] = "simulation-tape-seal.v1"
+    execution_environment: Literal["SIMULATED"] = "SIMULATED"
+    market_data_venue: Literal["BINANCE_UM"] = "BINANCE_UM"
+    tape_id: str = Field(..., min_length=1, max_length=128)
+    sealed_at_ms: NonNegativeInt
+    bar_chains: tuple[SimulationChainHeadV1, ...] = Field(..., min_length=5, max_length=5)
+    book_chain: SimulationBookChainHeadV1
+    tape_sha256: Sha256Hex | None = None
+    paper_qualification_eligible: Literal[False] = False
+    trial15_eligible: Literal[False] = False
+    alpha_claim: Literal[False] = False
+
+    @field_validator("tape_id")
+    @classmethod
+    def validate_tape_id(cls, value: str) -> str:
+        return _normalized_identifier(value, name="tape_id")
+
+    @model_validator(mode="after")
+    def validate_seal(self) -> Self:
+        chains = tuple(sorted(self.bar_chains, key=lambda item: item.symbol))
+        symbols = tuple(item.symbol for item in chains)
+        expected_symbols = tuple(sorted(("BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT")))
+        if symbols != expected_symbols:
+            raise ValueError(
+                "simulation tape seal requires exactly one closed-bar chain for each fixed symbol"
+            )
+        object.__setattr__(self, "bar_chains", chains)
+        expected = canonical_sha256(self.identity_payload())
+        if self.tape_sha256 is not None and self.tape_sha256 != expected:
+            raise ValueError("tape_sha256 does not match the canonical simulation tape seal")
+        object.__setattr__(self, "tape_sha256", expected)
+        _set_default_envelope(self, stable_id=expected, timestamp_ms=self.sealed_at_ms)
+        return self
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "alpha_claim": self.alpha_claim,
+            "bar_chains": [item.model_dump(mode="json") for item in self.bar_chains],
+            "book_chain": self.book_chain.model_dump(mode="json"),
+            "contract_version": self.contract_version,
+            "execution_environment": self.execution_environment,
+            "market_data_venue": self.market_data_venue,
+            "paper_qualification_eligible": self.paper_qualification_eligible,
+            "sealed_at_ms": self.sealed_at_ms,
+            "tape_id": self.tape_id,
+            "trial15_eligible": self.trial15_eligible,
+        }
+
+
+class SimulationTradeV1(StrictKairosMessage):
+    """Immutable admission lineage for one simulator-only trade lifecycle."""
+
+    contract_version: Literal["simulation-trade.v1"] = "simulation-trade.v1"
+    execution_environment: Literal["SIMULATED"] = "SIMULATED"
+    trade_id: Sha256Hex | None = None
+    admission: SimulationAdmissionV1
+    session_id: Sha256Hex | None = None
+    admission_id: Sha256Hex | None = None
+    intent_id: Sha256Hex | None = None
+    symbol: SimulationSymbol | None = None
+    side: Side | None = None
+    created_at_ms: NonNegativeInt
+    paper_qualification_eligible: Literal[False] = False
+    trial15_eligible: Literal[False] = False
+    alpha_claim: Literal[False] = False
+
+    @model_validator(mode="after")
+    def validate_trade(self) -> Self:
+        admission_id = self.admission.admission_id
+        session_id = self.admission.session_id
+        intent_id = self.admission.intent_sha256
+        if admission_id is None or session_id is None or intent_id is None:
+            raise ValueError("simulation trade requires canonical admission lineage")
+        expected_values = {
+            "session_id": session_id,
+            "admission_id": admission_id,
+            "intent_id": intent_id,
+            "symbol": self.admission.intent.symbol,
+            "side": self.admission.intent.side,
+        }
+        for field_name, expected in expected_values.items():
+            supplied = getattr(self, field_name)
+            if supplied is not None and supplied != expected:
+                raise ValueError(f"{field_name} does not match the immutable simulation admission")
+            object.__setattr__(self, field_name, expected)
+        if self.side is Side.FLAT:
+            raise ValueError("a simulation trade must be directional")
+        if self.created_at_ms < self.admission.admitted_at_ms:
+            raise ValueError("a simulation trade cannot predate its admission")
+        expected_id = canonical_sha256(self.identity_payload())
+        if self.trade_id is not None and self.trade_id != expected_id:
+            raise ValueError("trade_id does not match the canonical simulation trade")
+        object.__setattr__(self, "trade_id", expected_id)
+        _set_default_envelope(self, stable_id=expected_id, timestamp_ms=self.created_at_ms)
+        return self
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "admission_id": self.admission_id,
+            "alpha_claim": self.alpha_claim,
+            "contract_version": self.contract_version,
+            "created_at_ms": self.created_at_ms,
+            "execution_environment": self.execution_environment,
+            "intent_id": self.intent_id,
+            "paper_qualification_eligible": self.paper_qualification_eligible,
+            "session_id": self.session_id,
+            "side": None if self.side is None else self.side.value,
+            "symbol": self.symbol,
+            "trial15_eligible": self.trial15_eligible,
+        }
+
+
+class SimulationCommandV1(StrictKairosMessage):
+    """One immutable input to the pure simulator IOC kernel, never a venue order."""
+
+    contract_version: Literal["simulation-command.v1"] = "simulation-command.v1"
+    execution_environment: Literal["SIMULATED"] = "SIMULATED"
+    command_id: Sha256Hex | None = None
+    trade: SimulationTradeV1
+    session_id: Sha256Hex | None = None
+    admission_id: Sha256Hex | None = None
+    intent_id: Sha256Hex | None = None
+    trade_id: Sha256Hex | None = None
+    symbol: SimulationSymbol | None = None
+    side: Side | None = None
+    command_kind: SimulationCommandKind
+    quantity: PositiveFloat
+    price_cap: PositiveFloat
+    submitted_at_ms: NonNegativeInt
+    persisted_at_ms: NonNegativeInt
+    eligible_at_ms: NonNegativeInt
+    expires_at_ms: NonNegativeInt
+    paper_qualification_eligible: Literal[False] = False
+    trial15_eligible: Literal[False] = False
+    alpha_claim: Literal[False] = False
+
+    @model_validator(mode="after")
+    def validate_command(self) -> Self:
+        expected_values = {
+            "session_id": self.trade.session_id,
+            "admission_id": self.trade.admission_id,
+            "intent_id": self.trade.intent_id,
+            "trade_id": self.trade.trade_id,
+            "symbol": self.trade.symbol,
+            "side": self.trade.side,
+        }
+        if any(value is None for value in expected_values.values()):
+            raise ValueError("simulation command requires canonical simulation trade lineage")
+        for field_name, expected in expected_values.items():
+            supplied = getattr(self, field_name)
+            if supplied is not None and supplied != expected:
+                raise ValueError(f"{field_name} does not match the immutable simulation trade")
+            object.__setattr__(self, field_name, expected)
+        if self.persisted_at_ms < self.submitted_at_ms:
+            raise ValueError("simulation command persistence cannot predate submission")
+        if self.eligible_at_ms < self.trade.created_at_ms:
+            raise ValueError("simulation command eligibility cannot predate its trade")
+        if self.expires_at_ms < self.eligible_at_ms:
+            raise ValueError("simulation command expiry cannot predate eligibility")
+        expected_id = canonical_sha256(self.identity_payload())
+        if self.command_id is not None and self.command_id != expected_id:
+            raise ValueError("command_id does not match the canonical simulation command")
+        object.__setattr__(self, "command_id", expected_id)
+        _set_default_envelope(self, stable_id=expected_id, timestamp_ms=self.persisted_at_ms)
+        return self
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "admission_id": self.admission_id,
+            "alpha_claim": self.alpha_claim,
+            "command_kind": self.command_kind,
+            "contract_version": self.contract_version,
+            "eligible_at_ms": self.eligible_at_ms,
+            "execution_environment": self.execution_environment,
+            "expires_at_ms": self.expires_at_ms,
+            "intent_id": self.intent_id,
+            "paper_qualification_eligible": self.paper_qualification_eligible,
+            "persisted_at_ms": self.persisted_at_ms,
+            "price_cap": self.price_cap,
+            "quantity": self.quantity,
+            "session_id": self.session_id,
+            "side": None if self.side is None else self.side.value,
+            "submitted_at_ms": self.submitted_at_ms,
+            "symbol": self.symbol,
+            "trade_id": self.trade_id,
+            "trial15_eligible": self.trial15_eligible,
+        }
+
+
+class SimulationFillLevelV1(StrictValueModel):
+    """One auditable simulated fill at a recorded book level."""
+
+    book_price: PositiveFloat
+    execution_price: PositiveFloat
+    quantity: PositiveFloat
+    fee_quote: NonNegativeFloat
+
+
+class SimulationCommandReceiptV1(StrictKairosMessage):
+    """Terminal, immutable outcome of one simulator command.
+
+    A receipt records a model calculation, not exchange acknowledgement or a
+    fill.  It is deliberately terminal: the pure kernel's ``WAIT`` outcome is
+    not durable idempotency evidence and must be evaluated again later.
+    """
+
+    contract_version: Literal["simulation-command-receipt.v1"] = "simulation-command-receipt.v1"
+    execution_environment: Literal["SIMULATED"] = "SIMULATED"
+    receipt_id: Sha256Hex | None = None
+    command: SimulationCommandV1
+    command_id: Sha256Hex | None = None
+    session_id: Sha256Hex | None = None
+    admission_id: Sha256Hex | None = None
+    intent_id: Sha256Hex | None = None
+    trade_id: Sha256Hex | None = None
+    assumptions_sha256: Sha256Hex | None = None
+    model_frame_sha256: Sha256Hex | None = None
+    status: SimulationReceiptStatus
+    reason_codes: tuple[str, ...] = Field(..., min_length=1, max_length=16)
+    arrival_at_ms: NonNegativeInt
+    filled_quantity: NonNegativeFloat
+    cancelled_quantity: NonNegativeFloat
+    average_price: PositiveFloat | None = None
+    notional_quote: NonNegativeFloat
+    fee_quote: NonNegativeFloat
+    arrival_mid_price: PositiveFloat | None = None
+    implementation_shortfall_quote: NonNegativeFloat
+    level_fills: tuple[SimulationFillLevelV1, ...] = Field(default_factory=tuple, max_length=100)
+    paper_qualification_eligible: Literal[False] = False
+    trial15_eligible: Literal[False] = False
+    alpha_claim: Literal[False] = False
+
+    @model_validator(mode="after")
+    def validate_receipt(self) -> Self:
+        command_id = self.command.command_id
+        session_id = self.command.session_id
+        admission_id = self.command.admission_id
+        intent_id = self.command.intent_id
+        trade_id = self.command.trade_id
+        assumptions_sha256 = self.command.trade.admission.session.assumptions.assumptions_sha256
+        if any(
+            value is None
+            for value in (command_id, session_id, admission_id, intent_id, trade_id, assumptions_sha256)
+        ):
+            raise ValueError("simulation receipt requires canonical command and assumption lineage")
+        expected_values = {
+            "command_id": command_id,
+            "session_id": session_id,
+            "admission_id": admission_id,
+            "intent_id": intent_id,
+            "trade_id": trade_id,
+            "assumptions_sha256": assumptions_sha256,
+        }
+        for field_name, expected in expected_values.items():
+            supplied = getattr(self, field_name)
+            if supplied is not None and supplied != expected:
+                raise ValueError(f"{field_name} does not match the immutable simulation command")
+            object.__setattr__(self, field_name, expected)
+        if self.arrival_at_ms < self.command.submitted_at_ms:
+            raise ValueError("simulation receipt arrival cannot predate command submission")
+        if self.arrival_at_ms > self.command.expires_at_ms and self.filled_quantity > 0:
+            raise ValueError("a model fill cannot arrive after command expiry")
+        if any(not code or code != code.strip() or len(code) > 100 for code in self.reason_codes):
+            raise ValueError("simulation receipt reason codes must be normalized non-empty strings")
+        object.__setattr__(self, "reason_codes", tuple(sorted(set(self.reason_codes))))
+        level_quantity = sum(item.quantity for item in self.level_fills)
+        level_notional = sum(item.quantity * item.execution_price for item in self.level_fills)
+        level_fee = sum(item.fee_quote for item in self.level_fills)
+        tolerance = 1e-12
+        if (
+            abs(level_quantity - self.filled_quantity) > tolerance
+            or abs(level_notional - self.notional_quote) > tolerance
+            or abs(level_fee - self.fee_quote) > tolerance
+        ):
+            raise ValueError("simulation receipt totals must equal its immutable level fills")
+        if abs(self.filled_quantity + self.cancelled_quantity - self.command.quantity) > tolerance:
+            raise ValueError("simulation receipt quantity must be filled or cancelled exactly once")
+        if self.filled_quantity == 0:
+            if (
+                self.status not in {"NO_FILL", "BLOCKED"}
+                or self.average_price is not None
+                or self.arrival_mid_price is not None
+                or self.model_frame_sha256 is not None
+                or self.notional_quote != 0
+                or self.fee_quote != 0
+                or self.implementation_shortfall_quote != 0
+                or self.level_fills
+            ):
+                raise ValueError("a non-fill receipt cannot invent a book frame or economic outcome")
+        else:
+            if (
+                self.model_frame_sha256 is None
+                or self.average_price is None
+                or self.arrival_mid_price is None
+            ):
+                raise ValueError("a model fill requires its recorded frame and arrival reference")
+            if abs(self.average_price - (self.notional_quote / self.filled_quantity)) > tolerance:
+                raise ValueError(
+                    "simulation receipt average price must equal model notional per filled quantity"
+                )
+            if self.status == "FILLED" and abs(self.filled_quantity - self.command.quantity) > tolerance:
+                raise ValueError("a FILLED receipt must fill the entire command")
+            if self.status == "PARTIAL" and not 0 < self.filled_quantity < self.command.quantity:
+                raise ValueError("a PARTIAL receipt must have a strictly partial fill")
+            if self.status in {"NO_FILL", "BLOCKED"}:
+                raise ValueError("a non-fill status cannot carry model fills")
+        expected_id = canonical_sha256(self.identity_payload())
+        if self.receipt_id is not None and self.receipt_id != expected_id:
+            raise ValueError("receipt_id does not match the canonical simulation command receipt")
+        object.__setattr__(self, "receipt_id", expected_id)
+        _set_default_envelope(self, stable_id=expected_id, timestamp_ms=self.arrival_at_ms)
+        return self
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "admission_id": self.admission_id,
+            "alpha_claim": self.alpha_claim,
+            "arrival_at_ms": self.arrival_at_ms,
+            "arrival_mid_price": self.arrival_mid_price,
+            "assumptions_sha256": self.assumptions_sha256,
+            "cancelled_quantity": self.cancelled_quantity,
+            "command_id": self.command_id,
+            "contract_version": self.contract_version,
+            "execution_environment": self.execution_environment,
+            "fee_quote": self.fee_quote,
+            "filled_quantity": self.filled_quantity,
+            "implementation_shortfall_quote": self.implementation_shortfall_quote,
+            "intent_id": self.intent_id,
+            "level_fills": [item.model_dump(mode="json") for item in self.level_fills],
+            "model_frame_sha256": self.model_frame_sha256,
+            "notional_quote": self.notional_quote,
+            "paper_qualification_eligible": self.paper_qualification_eligible,
+            "reason_codes": self.reason_codes,
+            "session_id": self.session_id,
+            "status": self.status,
+            "trade_id": self.trade_id,
+            "trial15_eligible": self.trial15_eligible,
+        }
+
+
+class SimulationTradeEventV2(StrictKairosMessage):
+    """Hash-chained simulator lifecycle fact with an explicit state transition."""
+
+    contract_version: Literal["simulation-trade-event.v2"] = "simulation-trade-event.v2"
+    execution_environment: Literal["SIMULATED"] = "SIMULATED"
+    event_id: Sha256Hex | None = None
+    session_id: Sha256Hex
+    admission_id: Sha256Hex
+    intent_id: Sha256Hex
+    trade_id: Sha256Hex
+    event_seq: PositiveInt
+    previous_event_sha256: Sha256Hex | None = None
+    event_type: SimulationEventType
+    from_state: SimulationTradeState | None = None
+    to_state: SimulationTradeState
+    occurred_at_ms: NonNegativeInt
+    symbol: SimulationSymbol
+    side: Literal["LONG", "SHORT"]
+    command_id: Sha256Hex | None = None
+    receipt_id: Sha256Hex | None = None
+    filled_quantity: NonNegativeFloat = 0.0
+    average_price: PositiveFloat | None = None
+    model_frame_sha256: Sha256Hex | None = None
+    reason_codes: tuple[str, ...] = Field(..., min_length=1, max_length=16)
+    paper_qualification_eligible: Literal[False] = False
+    trial15_eligible: Literal[False] = False
+    alpha_claim: Literal[False] = False
+
+    @model_validator(mode="after")
+    def validate_event(self) -> Self:
+        if (self.event_seq == 1) != (self.previous_event_sha256 is None):
+            raise ValueError("the first simulation event has no predecessor; every later event must name one")
+        if (self.event_seq == 1) != (self.from_state is None):
+            raise ValueError("only the first simulation event may omit a prior lifecycle state")
+        root = (self.event_type, self.from_state, self.to_state)
+        if self.event_seq == 1 and root != ("ADMITTED", None, "PENDING"):
+            raise ValueError("the first simulation event must admit a PENDING trade")
+        if self.event_seq > 1 and self.event_type == "ADMITTED":
+            raise ValueError("a simulation trade may be admitted only once")
+        if self.event_type in {"ENTRY_FILLED", "ENTRY_PARTIAL"} and (
+            self.from_state != "PENDING" or self.to_state != "ACTIVE"
+        ):
+            raise ValueError("entry fills must transition a simulation trade from PENDING to ACTIVE")
+        if self.event_type == "ENTRY_NO_FILL" and (self.from_state, self.to_state) != ("PENDING", "NO_FILL"):
+            raise ValueError("an entry no-fill must terminate PENDING as NO_FILL")
+        if self.event_type in {"STOP_TRIGGERED", "TARGET_TRIGGERED", "TIMEOUT_TRIGGERED", "FLAT"} and (
+            self.from_state != "ACTIVE" or self.to_state != "FLAT"
+        ):
+            raise ValueError("a simulated exit must transition ACTIVE to FLAT")
+        if self.event_type == "RECOVERED" and self.from_state != self.to_state:
+            raise ValueError("a recovery event cannot change simulated lifecycle state")
+        if self.event_type in {"NO_ADMITTED_BOOK", "SOURCE_BARRIER", "UNRESOLVED"} and self.to_state not in {
+            "BLOCKED",
+            "UNRESOLVED",
+        }:
+            raise ValueError("a simulator source barrier must end BLOCKED or UNRESOLVED")
+        if any(not code or code != code.strip() or len(code) > 100 for code in self.reason_codes):
+            raise ValueError("simulation event reason codes must be normalized non-empty strings")
+        object.__setattr__(self, "reason_codes", tuple(sorted(set(self.reason_codes))))
+        requires_fill = self.event_type in {
+            "ENTRY_FILLED",
+            "ENTRY_PARTIAL",
+            "STOP_TRIGGERED",
+            "TARGET_TRIGGERED",
+            "TIMEOUT_TRIGGERED",
+        }
+        prohibits_fill = self.event_type in {
+            "ADMITTED",
+            "ENTRY_NO_FILL",
+            "NO_ADMITTED_BOOK",
+            "SOURCE_BARRIER",
+            "RECOVERED",
+            "UNRESOLVED",
+        }
+        if requires_fill and (
+            self.filled_quantity <= 0
+            or self.average_price is None
+            or self.model_frame_sha256 is None
+            or self.command_id is None
+            or self.receipt_id is None
+        ):
+            raise ValueError("a simulated fill event requires a command, receipt, frame, quantity and price")
+        if prohibits_fill and (self.filled_quantity != 0 or self.average_price is not None):
+            raise ValueError("a non-fill simulation event cannot claim a model fill")
+        expected = canonical_sha256(self.identity_payload())
+        if self.event_id is not None and self.event_id != expected:
+            raise ValueError("event_id does not match the canonical simulation trade event")
+        object.__setattr__(self, "event_id", expected)
+        _set_default_envelope(self, stable_id=expected, timestamp_ms=self.occurred_at_ms)
+        return self
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "admission_id": self.admission_id,
+            "alpha_claim": self.alpha_claim,
+            "average_price": self.average_price,
+            "command_id": self.command_id,
+            "contract_version": self.contract_version,
+            "event_seq": self.event_seq,
+            "event_type": self.event_type,
+            "execution_environment": self.execution_environment,
+            "filled_quantity": self.filled_quantity,
+            "from_state": self.from_state,
+            "intent_id": self.intent_id,
+            "model_frame_sha256": self.model_frame_sha256,
+            "occurred_at_ms": self.occurred_at_ms,
+            "paper_qualification_eligible": self.paper_qualification_eligible,
+            "previous_event_sha256": self.previous_event_sha256,
+            "reason_codes": self.reason_codes,
+            "receipt_id": self.receipt_id,
+            "session_id": self.session_id,
+            "side": self.side,
+            "symbol": self.symbol,
+            "to_state": self.to_state,
+            "trade_id": self.trade_id,
+            "trial15_eligible": self.trial15_eligible,
+        }
+
+
+class SimulationTradeJournalHeadV1(StrictValueModel):
+    """One trade's terminal journal head as included in a session receipt."""
+
+    trade_id: Sha256Hex
+    state: SimulationTradeState
+    event_count: NonNegativeInt
+    journal_head_sha256: Sha256Hex | None = None
+
+    @model_validator(mode="after")
+    def validate_head(self) -> Self:
+        if (self.event_count == 0) != (self.journal_head_sha256 is None):
+            raise ValueError("an empty trade journal must not claim a head hash")
+        return self
+
+
+class SimulationSessionReceiptV1(StrictKairosMessage):
+    """Terminal receipt for an isolated session; it deliberately contains no PnL claim."""
+
+    contract_version: Literal["simulation-session-receipt.v1"] = "simulation-session-receipt.v1"
+    execution_environment: Literal["SIMULATED"] = "SIMULATED"
+    receipt_id: Sha256Hex | None = None
+    session: SimulationSessionV1
+    session_id: Sha256Hex | None = None
+    tape_id: str | None = None
+    tape_sha256: Sha256Hex | None = None
+    receipt_state: SimulationSessionReceiptState
+    completed_at_ms: NonNegativeInt
+    command_count: NonNegativeInt
+    trade_journals: tuple[SimulationTradeJournalHeadV1, ...] = Field(default_factory=tuple, max_length=1_024)
+    paper_qualification_eligible: Literal[False] = False
+    trial15_eligible: Literal[False] = False
+    alpha_claim: Literal[False] = False
+
+    @model_validator(mode="after")
+    def validate_session_receipt(self) -> Self:
+        expected_values = {
+            "session_id": self.session.session_id,
+            "tape_id": self.session.tape_id,
+            "tape_sha256": self.session.tape_sha256,
+        }
+        if any(value is None for value in expected_values.values()):
+            raise ValueError("simulation session receipt requires canonical session lineage")
+        for field_name, expected in expected_values.items():
+            supplied = getattr(self, field_name)
+            if supplied is not None and supplied != expected:
+                raise ValueError(f"{field_name} does not match the immutable simulation session")
+            object.__setattr__(self, field_name, expected)
+        if self.completed_at_ms < self.session.started_at_ms:
+            raise ValueError("simulation session receipt cannot predate its session")
+        journals = tuple(sorted(self.trade_journals, key=lambda item: item.trade_id))
+        if len({item.trade_id for item in journals}) != len(journals):
+            raise ValueError("simulation session receipt cannot repeat a trade journal")
+        if self.receipt_state == "COMPLETED" and any(
+            item.state not in {"FLAT", "UNRESOLVED", "NO_FILL", "BLOCKED"} for item in journals
+        ):
+            raise ValueError("a completed simulation session requires terminal trade journals")
+        object.__setattr__(self, "trade_journals", journals)
+        expected_id = canonical_sha256(self.identity_payload())
+        if self.receipt_id is not None and self.receipt_id != expected_id:
+            raise ValueError("receipt_id does not match the canonical simulation session receipt")
+        object.__setattr__(self, "receipt_id", expected_id)
+        _set_default_envelope(self, stable_id=expected_id, timestamp_ms=self.completed_at_ms)
+        return self
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "alpha_claim": self.alpha_claim,
+            "command_count": self.command_count,
+            "completed_at_ms": self.completed_at_ms,
+            "contract_version": self.contract_version,
+            "execution_environment": self.execution_environment,
+            "paper_qualification_eligible": self.paper_qualification_eligible,
+            "receipt_state": self.receipt_state,
+            "session_id": self.session_id,
+            "tape_id": self.tape_id,
+            "tape_sha256": self.tape_sha256,
+            "trade_journals": [item.model_dump(mode="json") for item in self.trade_journals],
+            "trial15_eligible": self.trial15_eligible,
         }

@@ -15,10 +15,20 @@ from kairos_core import (
     Side,
     SimulationAdmissionV1,
     SimulationAssumptionsV1,
+    SimulationBookChainHeadV1,
+    SimulationChainHeadV1,
+    SimulationCommandReceiptV1,
+    SimulationCommandV1,
+    SimulationFillLevelV1,
     SimulationResultV1,
+    SimulationSessionReceiptV1,
     SimulationSessionV1,
     SimulationStrategyRefV1,
+    SimulationTapeSealV1,
     SimulationTradeEventV1,
+    SimulationTradeEventV2,
+    SimulationTradeJournalHeadV1,
+    SimulationTradeV1,
     StrategyIntentV1,
     StrategyProvenanceV1,
     TradingMode,
@@ -136,6 +146,73 @@ def _admission(**overrides: object) -> SimulationAdmissionV1:
     return SimulationAdmissionV1(**values)
 
 
+def _tape_seal(**overrides: object) -> SimulationTapeSealV1:
+    values: dict[str, object] = {
+        "source": "sim-recorder",
+        "tape_id": "binance-20260919",
+        "sealed_at_ms": T0 + 600_000,
+        "bar_chains": (
+            SimulationChainHeadV1(symbol="BTCUSDT", entry_count=1, head_sha256=SHA_A),
+            SimulationChainHeadV1(symbol="ETHUSDT", entry_count=1, head_sha256=SHA_B),
+            SimulationChainHeadV1(symbol="SOLUSDT", entry_count=1, head_sha256=SHA_C),
+            SimulationChainHeadV1(symbol="BNBUSDT", entry_count=1, head_sha256=SHA_D),
+            SimulationChainHeadV1(symbol="XRPUSDT", entry_count=1, head_sha256=SHA_E),
+        ),
+        "book_chain": SimulationBookChainHeadV1(entry_count=1, head_sha256=_frame().frame_sha256),
+    }
+    values.update(overrides)
+    return SimulationTapeSealV1(**values)
+
+
+def _trade(**overrides: object) -> SimulationTradeV1:
+    values: dict[str, object] = {
+        "source": "market-simulator",
+        "admission": _admission(),
+        "created_at_ms": T0 + 60_000,
+    }
+    values.update(overrides)
+    return SimulationTradeV1(**values)
+
+
+def _command(**overrides: object) -> SimulationCommandV1:
+    values: dict[str, object] = {
+        "source": "market-simulator",
+        "trade": _trade(),
+        "command_kind": "ENTRY_IOC",
+        "quantity": 0.01,
+        "price_cap": 100.2,
+        "submitted_at_ms": T0 + 60_000,
+        "persisted_at_ms": T0 + 60_001,
+        "eligible_at_ms": T0 + 60_000,
+        "expires_at_ms": T0 + 120_000,
+    }
+    values.update(overrides)
+    return SimulationCommandV1(**values)
+
+
+def _receipt(**overrides: object) -> SimulationCommandReceiptV1:
+    values: dict[str, object] = {
+        "source": "market-simulator",
+        "command": _command(),
+        "model_frame_sha256": _frame().frame_sha256,
+        "status": "FILLED",
+        "reason_codes": ("MODEL_IOC",),
+        "arrival_at_ms": T0 + 60_100,
+        "filled_quantity": 0.01,
+        "cancelled_quantity": 0.0,
+        "average_price": 100.2,
+        "notional_quote": 1.002,
+        "fee_quote": 0.00501,
+        "arrival_mid_price": 100.0,
+        "implementation_shortfall_quote": 0.002,
+        "level_fills": (
+            SimulationFillLevelV1(book_price=100.1, execution_price=100.2, quantity=0.01, fee_quote=0.00501),
+        ),
+    }
+    values.update(overrides)
+    return SimulationCommandReceiptV1(**values)
+
+
 def test_recorded_frame_is_hash_chained_deterministic_and_strict() -> None:
     first = _frame()
     second = _frame()
@@ -250,3 +327,127 @@ def test_simulated_events_and_results_cannot_claim_venue_or_alpha() -> None:
         SimulationTradeEventV1.model_validate(event.model_dump() | {"alpha_claim": True})
     with pytest.raises(ValidationError):
         SimulationResultV1.model_validate(result.model_dump() | {"execution_environment": "PAPER"})
+
+
+def test_tape_seal_records_all_input_chain_heads_and_is_deterministic() -> None:
+    first = _tape_seal()
+    second = _tape_seal()
+    assert first.tape_sha256 == second.tape_sha256
+    assert first.message_id == first.tape_sha256
+    assert tuple(chain.symbol for chain in first.bar_chains) == (
+        "BNBUSDT",
+        "BTCUSDT",
+        "ETHUSDT",
+        "SOLUSDT",
+        "XRPUSDT",
+    )
+    with pytest.raises(ValidationError, match="at least 5"):
+        _tape_seal(bar_chains=_tape_seal().bar_chains[:-1])
+    with pytest.raises(ValidationError, match="empty simulation book chain"):
+        SimulationBookChainHeadV1(entry_count=0, head_sha256=SHA_A)
+    with pytest.raises(ValidationError):
+        _tape_seal(evedex_profile="DEV")
+
+
+def test_command_and_receipt_have_immutable_sim_only_lineage() -> None:
+    command = _command()
+    receipt = _receipt(command=command)
+    assert command.command_id
+    assert receipt.command_id == command.command_id
+    assert receipt.assumptions_sha256 == command.trade.admission.session.assumptions.assumptions_sha256
+    assert receipt.receipt_id
+    with pytest.raises(ValidationError, match="does not match the immutable simulation trade"):
+        _command(symbol="ETHUSDT")
+    with pytest.raises(ValidationError, match="must be filled or cancelled"):
+        _receipt(command=command, cancelled_quantity=0.1)
+    with pytest.raises(ValidationError, match="Input should be False"):
+        _receipt(
+            command=command,
+            status="NO_FILL",
+            model_frame_sha256=None,
+            filled_quantity=0.0,
+            cancelled_quantity=0.01,
+            average_price=None,
+            notional_quote=0.0,
+            fee_quote=0.0,
+            arrival_mid_price=None,
+            implementation_shortfall_quote=0.0,
+            level_fills=(),
+            paper_qualification_eligible=True,
+        )
+
+
+def test_v2_event_chain_and_session_receipt_require_terminal_evidence() -> None:
+    trade = _trade()
+    admitted = SimulationTradeEventV2(
+        source="market-simulator",
+        session_id=trade.session_id,
+        admission_id=trade.admission_id,
+        intent_id=trade.intent_id,
+        trade_id=trade.trade_id,
+        event_seq=1,
+        event_type="ADMITTED",
+        to_state="PENDING",
+        occurred_at_ms=T0 + 60_000,
+        symbol="BTCUSDT",
+        side="LONG",
+        reason_codes=("SIM_ADMISSION",),
+    )
+    receipt = _receipt()
+    filled = SimulationTradeEventV2(
+        source="market-simulator",
+        session_id=trade.session_id,
+        admission_id=trade.admission_id,
+        intent_id=trade.intent_id,
+        trade_id=trade.trade_id,
+        event_seq=2,
+        previous_event_sha256=admitted.event_id,
+        event_type="ENTRY_FILLED",
+        from_state="PENDING",
+        to_state="ACTIVE",
+        occurred_at_ms=T0 + 60_100,
+        symbol="BTCUSDT",
+        side="LONG",
+        command_id=receipt.command_id,
+        receipt_id=receipt.receipt_id,
+        filled_quantity=receipt.filled_quantity,
+        average_price=receipt.average_price,
+        model_frame_sha256=receipt.model_frame_sha256,
+        reason_codes=("MODEL_IOC",),
+    )
+    assert filled.previous_event_sha256 == admitted.event_id
+    with pytest.raises(ValidationError, match="first simulation event"):
+        SimulationTradeEventV2.model_validate(
+            admitted.model_dump() | {"event_seq": 2, "previous_event_sha256": None}
+        )
+    sealed_session = _session(tape_sha256=_tape_seal().tape_sha256)
+    session_receipt = SimulationSessionReceiptV1(
+        source="market-simulator",
+        session=sealed_session,
+        receipt_state="COMPLETED",
+        completed_at_ms=T0 + 180_000,
+        command_count=1,
+        trade_journals=(
+            SimulationTradeJournalHeadV1(
+                trade_id=trade.trade_id,
+                state="FLAT",
+                event_count=3,
+                journal_head_sha256=SHA_E,
+            ),
+        ),
+    )
+    assert session_receipt.receipt_id
+    with pytest.raises(ValidationError, match="terminal"):
+        SimulationSessionReceiptV1.model_validate(
+            session_receipt.model_dump()
+            | {
+                "trade_journals": (
+                    SimulationTradeJournalHeadV1(
+                        trade_id=trade.trade_id,
+                        state="ACTIVE",
+                        event_count=2,
+                        journal_head_sha256=SHA_E,
+                    ),
+                )
+            }
+        )
