@@ -45,6 +45,7 @@ SimulationEventType = Literal[
 ]
 SimulationTradeState = Literal["PENDING", "ACTIVE", "FLAT", "UNRESOLVED", "NO_FILL", "BLOCKED"]
 SimulationCommandKind = Literal["ENTRY_IOC", "STOP_EXIT_IOC", "TARGET_EXIT_IOC", "TIMEOUT_EXIT_IOC"]
+SimulationOrderSide = Literal["BUY", "SELL"]
 SimulationReceiptStatus = Literal["FILLED", "PARTIAL", "NO_FILL", "BLOCKED"]
 SimulationSessionReceiptState = Literal["COMPLETED", "BLOCKED"]
 
@@ -298,6 +299,8 @@ class SimulationAdmissionV1(StrictKairosMessage):
             raise ValueError("simulation admission must occur inside its immutable session")
         if not self.intent.decision_ts_ms <= self.admitted_at_ms <= self.intent.entry_expires_ts_ms:
             raise ValueError("simulation admission must occur before the immutable intent expires")
+        if self.admitted_at_ms < self.intent.entry_eligible_ts_ms:
+            raise ValueError("simulation admission cannot precede immutable next-bar entry eligibility")
         allowed = {(item.strategy_id, item.strategy_revision) for item in self.session.strategy_allowlist}
         if (self.intent.strategy_id, self.intent.strategy_revision) not in allowed:
             raise ValueError("strategy intent is not on this simulation session allowlist")
@@ -447,12 +450,14 @@ class SimulationResultV1(StrictKairosMessage):
         elif self.final_state == "UNRESOLVED":
             if (
                 self.entry_filled_quantity <= 0
-                or self.exit_filled_quantity != 0
+                or self.exit_filled_quantity >= self.entry_filled_quantity
                 or self.entry_average_price is None
             ):
-                raise ValueError("an unresolved result requires an unclosed model entry")
-            if self.exit_average_price is not None:
-                raise ValueError("an unresolved result cannot invent an exit price")
+                raise ValueError("an unresolved result requires a strictly positive remaining model exposure")
+            if (self.exit_filled_quantity == 0) != (self.exit_average_price is None):
+                raise ValueError(
+                    "an unresolved result must show an exit price exactly when it has a partial exit"
+                )
         else:
             if (
                 self.entry_filled_quantity != 0
@@ -638,6 +643,8 @@ class SimulationRiskDecisionV1(StrictKairosMessage):
             raise ValueError("simulation risk decision cannot predate candidate review")
         if not self.session.started_at_ms <= self.decided_at_ms <= self.session.ends_at_ms:
             raise ValueError("simulation risk decision must occur inside its immutable session")
+        if self.decided_at_ms < self.intent.entry_eligible_ts_ms:
+            raise ValueError("simulation risk decision cannot precede immutable next-bar entry eligibility")
         canonical_reasons = tuple(sorted(set(self.rejection_reasons)))
         if any(not reason or reason != reason.strip() or len(reason) > 100 for reason in canonical_reasons):
             raise ValueError("simulation rejection reasons must be normalized non-empty strings")
@@ -755,6 +762,8 @@ class SimulationAdmissionV2(StrictKairosMessage):
             raise ValueError("simulation admission requires complete immutable decision lineage")
         if not decision.decided_at_ms <= self.admitted_at_ms <= self.intent.entry_expires_ts_ms:
             raise ValueError("simulation admission must follow its decision and precede intent expiry")
+        if self.admitted_at_ms < self.intent.entry_eligible_ts_ms:
+            raise ValueError("simulation admission cannot precede immutable next-bar entry eligibility")
         if self.admitted_at_ms > self.session.ends_at_ms:
             raise ValueError("simulation admission must occur inside its immutable session")
         expected_id = canonical_sha256(self.identity_payload())
@@ -861,6 +870,7 @@ class SimulationCommandV1(StrictKairosMessage):
     trade_id: Sha256Hex | None = None
     symbol: SimulationSymbol | None = None
     side: Side | None = None
+    order_side: SimulationOrderSide | None = None
     command_kind: SimulationCommandKind
     quantity: PositiveFloat
     price_cap: PositiveFloat
@@ -889,10 +899,27 @@ class SimulationCommandV1(StrictKairosMessage):
             if supplied is not None and supplied != expected:
                 raise ValueError(f"{field_name} does not match the immutable simulation trade")
             object.__setattr__(self, field_name, expected)
+        if self.side is None:
+            raise ValueError("simulation command requires a directional trade side")
+        is_entry = self.command_kind == "ENTRY_IOC"
+        expected_order_side: SimulationOrderSide
+        if self.side is Side.LONG:
+            expected_order_side = "BUY" if is_entry else "SELL"
+        elif self.side is Side.SHORT:
+            expected_order_side = "SELL" if is_entry else "BUY"
+        else:
+            raise ValueError("simulation command cannot derive an order side from FLAT")
+        if self.order_side is not None and self.order_side != expected_order_side:
+            raise ValueError(
+                "simulation command order_side does not match its immutable trade and command kind"
+            )
+        object.__setattr__(self, "order_side", expected_order_side)
         if self.persisted_at_ms < self.submitted_at_ms:
             raise ValueError("simulation command persistence cannot predate submission")
         if self.eligible_at_ms < self.trade.created_at_ms:
             raise ValueError("simulation command eligibility cannot predate its trade")
+        if self.submitted_at_ms < self.eligible_at_ms:
+            raise ValueError("simulation command submission cannot predate eligibility")
         if self.expires_at_ms < self.eligible_at_ms:
             raise ValueError("simulation command expiry cannot predate eligibility")
         expected_id = canonical_sha256(self.identity_payload())
@@ -912,6 +939,7 @@ class SimulationCommandV1(StrictKairosMessage):
             "execution_environment": self.execution_environment,
             "expires_at_ms": self.expires_at_ms,
             "intent_id": self.intent_id,
+            "order_side": self.order_side,
             "paper_qualification_eligible": self.paper_qualification_eligible,
             "persisted_at_ms": self.persisted_at_ms,
             "price_cap": self.price_cap,
@@ -1125,9 +1153,9 @@ class SimulationTradeEventV2(StrictKairosMessage):
         if self.event_type == "ENTRY_NO_FILL" and (self.from_state, self.to_state) != ("PENDING", "NO_FILL"):
             raise ValueError("an entry no-fill must terminate PENDING as NO_FILL")
         if self.event_type in {"STOP_TRIGGERED", "TARGET_TRIGGERED", "TIMEOUT_TRIGGERED", "FLAT"} and (
-            self.from_state != "ACTIVE" or self.to_state != "FLAT"
+            self.from_state != "ACTIVE" or self.to_state not in {"FLAT", "UNRESOLVED"}
         ):
-            raise ValueError("a simulated exit must transition ACTIVE to FLAT")
+            raise ValueError("a simulated exit must transition ACTIVE to FLAT or honest unresolved exposure")
         if self.event_type == "RECOVERED" and self.from_state != self.to_state:
             raise ValueError("a recovery event cannot change simulated lifecycle state")
         if self.event_type in {"NO_ADMITTED_BOOK", "SOURCE_BARRIER", "UNRESOLVED"} and self.to_state not in {
@@ -1135,6 +1163,10 @@ class SimulationTradeEventV2(StrictKairosMessage):
             "UNRESOLVED",
         }:
             raise ValueError("a simulator source barrier must end BLOCKED or UNRESOLVED")
+        if self.event_type == "UNRESOLVED" and self.from_state not in {"PENDING", "ACTIVE"}:
+            raise ValueError(
+                "an unresolved simulator event must preserve pending or active exposure evidence"
+            )
         if any(not code or code != code.strip() or len(code) > 100 for code in self.reason_codes):
             raise ValueError("simulation event reason codes must be normalized non-empty strings")
         object.__setattr__(self, "reason_codes", tuple(sorted(set(self.reason_codes))))

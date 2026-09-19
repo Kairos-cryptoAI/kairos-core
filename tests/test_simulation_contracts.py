@@ -444,11 +444,19 @@ def test_command_and_receipt_have_immutable_sim_only_lineage() -> None:
     command = _command()
     receipt = _receipt(command=command)
     assert command.command_id
+    assert command.order_side == "BUY"
     assert receipt.command_id == command.command_id
-    assert receipt.assumptions_sha256 == command.trade.admission.session.assumptions.assumptions_sha256
+    command_session = command.trade.admission.session
+    assert command_session is not None
+    assert receipt.assumptions_sha256 == command_session.assumptions.assumptions_sha256
     assert receipt.receipt_id
     with pytest.raises(ValidationError, match="does not match the immutable simulation trade"):
         _command(symbol="ETHUSDT")
+    assert _command(command_kind="TIMEOUT_EXIT_IOC").order_side == "SELL"
+    with pytest.raises(ValidationError, match="order_side"):
+        _command(order_side="SELL")
+    with pytest.raises(ValidationError, match="submission cannot predate eligibility"):
+        _command(submitted_at_ms=T0 + 59_999)
     with pytest.raises(ValidationError, match="must be filled or cancelled"):
         _receipt(command=command, cancelled_quantity=0.1)
     with pytest.raises(ValidationError, match="Input should be False"):
@@ -542,3 +550,57 @@ def test_v2_event_chain_and_session_receipt_require_terminal_evidence() -> None:
                 )
             }
         )
+
+
+def test_simulator_respects_next_bar_eligibility_and_reports_partial_exit_as_unresolved() -> None:
+    late_intent = _intent(entry_eligible_ts_ms=T0 + 120_000, entry_expires_ts_ms=T0 + 180_000)
+    late_route = _route(intent=late_intent)
+    late_review = _review(route=late_route, intent=late_intent)
+    with pytest.raises(ValidationError, match="next-bar entry eligibility"):
+        _simulation_decision(intent=late_intent, review=late_review, decided_at_ms=T0 + 60_100)
+    with pytest.raises(ValidationError, match="next-bar entry eligibility"):
+        _admission(admitted_at_ms=T0 + 59_999)
+
+    trade = _trade()
+    command = _command(command_kind="STOP_EXIT_IOC")
+    receipt = _receipt(command=command)
+    partial_exit = SimulationTradeEventV2(
+        source="market-simulator",
+        session_id=trade.session_id,
+        admission_id=trade.admission_id,
+        intent_id=trade.intent_id,
+        trade_id=trade.trade_id,
+        event_seq=2,
+        previous_event_sha256=SHA_A,
+        event_type="STOP_TRIGGERED",
+        from_state="ACTIVE",
+        to_state="UNRESOLVED",
+        occurred_at_ms=T0 + 120_000,
+        symbol="BTCUSDT",
+        side="LONG",
+        command_id=receipt.command_id,
+        receipt_id=receipt.receipt_id,
+        filled_quantity=0.005,
+        average_price=99.9,
+        model_frame_sha256=_frame().frame_sha256,
+        reason_codes=("PARTIAL_EXIT",),
+    )
+    assert partial_exit.to_state == "UNRESOLVED"
+    result = SimulationResultV1(
+        source="market-simulator",
+        session_id=trade.session_id,
+        admission_id=trade.admission_id,
+        intent_id=trade.intent_id,
+        trade_id=trade.trade_id,
+        terminal_event_id=partial_exit.event_id,
+        completed_at_ms=T0 + 120_001,
+        final_state="UNRESOLVED",
+        entry_filled_quantity=0.01,
+        exit_filled_quantity=0.005,
+        entry_average_price=100.2,
+        exit_average_price=99.9,
+        model_realized_pnl_quote=-0.0015,
+        model_fee_quote=0.0075,
+        reason_codes=("PARTIAL_EXIT",),
+    )
+    assert result.exit_filled_quantity < result.entry_filled_quantity
