@@ -637,8 +637,8 @@ class SimulationRiskDecisionV1(StrictKairosMessage):
         if self.review.intent.intent_id != intent_id:
             raise ValueError("simulation review and decision must carry the same immutable intent")
         allowed = {(item.strategy_id, item.strategy_revision) for item in self.session.strategy_allowlist}
-        if (self.intent.strategy_id, self.intent.strategy_revision) not in allowed:
-            raise ValueError("simulation risk decision intent is not on the session allowlist")
+        if self.approved and (self.intent.strategy_id, self.intent.strategy_revision) not in allowed:
+            raise ValueError("an approved simulation decision intent must be on the session allowlist")
         if self.decided_at_ms < self.review.reviewed_at_ms:
             raise ValueError("simulation risk decision cannot predate candidate review")
         if not self.session.started_at_ms <= self.decided_at_ms <= self.session.ends_at_ms:

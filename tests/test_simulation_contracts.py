@@ -604,3 +604,31 @@ def test_simulator_respects_next_bar_eligibility_and_reports_partial_exit_as_unr
         reason_codes=("PARTIAL_EXIT",),
     )
     assert result.exit_filled_quantity < result.entry_filled_quantity
+
+
+def test_simulation_risk_can_audit_an_unallowlisted_rejection_but_never_approve_it() -> None:
+    outside_intent = _intent(strategy_id="outside-strategy")
+    outside_route = _route(intent=outside_intent)
+    outside_review = _review(route=outside_route, intent=outside_intent)
+    rejected = SimulationRiskDecisionV1(
+        source="simulation-risk",
+        session=_session(),
+        intent=outside_intent,
+        review=outside_review,
+        approved=False,
+        rejection_reasons=("STRATEGY_NOT_ALLOWLISTED",),
+        quantity=0.0,
+        decided_at_ms=T0 + 60_100,
+    )
+    assert rejected.approved is False
+    with pytest.raises(ValidationError, match="approved simulation decision intent"):
+        SimulationRiskDecisionV1.model_validate(
+            rejected.model_dump()
+            | {
+                "approved": True,
+                "rejection_reasons": (),
+                "quantity": 0.01,
+                "price_cap": 100.2,
+                "selected_book_frame": _frame().model_dump(mode="json"),
+            }
+        )
