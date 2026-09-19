@@ -8,12 +8,18 @@ import pytest
 from pydantic import ValidationError
 
 from kairos_core import (
+    CandidateReviewTier,
+    CandidateReviewV1,
+    CandidateRouteV1,
     ClosedBarEventV1,
     ExitPlanV1,
+    ReasoningEffort,
     RecordedBookLevelV1,
     RecordedTopNBookFrameV1,
+    ReviewDecision,
     Side,
     SimulationAdmissionV1,
+    SimulationAdmissionV2,
     SimulationAssumptionsV1,
     SimulationBookChainHeadV1,
     SimulationChainHeadV1,
@@ -21,6 +27,7 @@ from kairos_core import (
     SimulationCommandV1,
     SimulationFillLevelV1,
     SimulationResultV1,
+    SimulationRiskDecisionV1,
     SimulationSessionReceiptV1,
     SimulationSessionV1,
     SimulationStrategyRefV1,
@@ -144,6 +151,63 @@ def _admission(**overrides: object) -> SimulationAdmissionV1:
     }
     values.update(overrides)
     return SimulationAdmissionV1(**values)
+
+
+def _route(**overrides: object) -> CandidateRouteV1:
+    values: dict[str, object] = {
+        "source": "router",
+        "intent": _intent(),
+        "review_tier": CandidateReviewTier.NORMAL,
+        "requested_reasoning_effort": ReasoningEffort.MEDIUM,
+        "routed_at_ms": T0 + 60_000,
+        "review_deadline_ms": T0 + 80_000,
+    }
+    values.update(overrides)
+    return CandidateRouteV1(**values)
+
+
+def _review(**overrides: object) -> CandidateReviewV1:
+    route = _route()
+    values: dict[str, object] = {
+        "source": "aggregator",
+        "route": route,
+        "intent": route.intent,
+        "decision": ReviewDecision.ALLOW,
+        "priority": 0,
+        "reviewed_at_ms": T0 + 60_050,
+        "reviewer": "DETERMINISTIC",
+        "reason_codes": ("SIM_TEST_ALLOW",),
+    }
+    values.update(overrides)
+    return CandidateReviewV1(**values)
+
+
+def _simulation_decision(**overrides: object) -> SimulationRiskDecisionV1:
+    session = _session()
+    review = _review()
+    values: dict[str, object] = {
+        "source": "simulation-risk",
+        "session": session,
+        "intent": review.intent,
+        "review": review,
+        "selected_book_frame": _frame(),
+        "approved": True,
+        "quantity": 0.01,
+        "price_cap": 100.2,
+        "decided_at_ms": T0 + 60_100,
+    }
+    values.update(overrides)
+    return SimulationRiskDecisionV1(**values)
+
+
+def _admission_v2(**overrides: object) -> SimulationAdmissionV2:
+    values: dict[str, object] = {
+        "source": "market-simulator",
+        "decision": _simulation_decision(),
+        "admitted_at_ms": T0 + 60_110,
+    }
+    values.update(overrides)
+    return SimulationAdmissionV2(**values)
 
 
 def _tape_seal(**overrides: object) -> SimulationTapeSealV1:
@@ -284,6 +348,33 @@ def test_admission_binds_the_same_intent_without_risk_or_paper_lineage() -> None
         _admission(price_cap=99.9)
     with pytest.raises(ValidationError):
         _admission(account_id="never accepted")
+
+
+def test_simulation_risk_admission_has_review_and_recorded_book_lineage() -> None:
+    decision = _simulation_decision()
+    admission = _admission_v2(decision=decision)
+    assert decision.decision_id
+    assert admission.decision_id == decision.decision_id
+    assert admission.review_id == decision.review_id
+    assert admission.selected_book_frame_sha256 == decision.selected_book_frame_sha256
+    assert (
+        SimulationTradeV1(
+            source="market-simulator", admission=admission, created_at_ms=admission.admitted_at_ms
+        ).admission_id
+        == admission.admission_id
+    )
+    veto = _review(decision=ReviewDecision.VETO, reason_codes=("SIM_TEST_VETO",))
+    with pytest.raises(ValidationError, match="only an ALLOW"):
+        _simulation_decision(review=veto, intent=veto.intent)
+    stale_review = _review(reviewed_at_ms=T0 + 69_900)
+    with pytest.raises(ValidationError, match="stale"):
+        _simulation_decision(
+            review=stale_review,
+            intent=stale_review.intent,
+            decided_at_ms=T0 + 70_000,
+        )
+    with pytest.raises(ValidationError):
+        _admission_v2(evedex_profile="DEV")
 
 
 def test_simulated_events_and_results_cannot_claim_venue_or_alpha() -> None:

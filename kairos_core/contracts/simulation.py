@@ -12,7 +12,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import Field, field_validator, model_validator
 
-from ..enums import Side
+from ..enums import ReviewDecision, Side
 from .base import (
     StrictKairosMessage,
     StrictValueModel,
@@ -20,7 +20,7 @@ from .base import (
     canonical_sha256,
     datetime_from_unix_ms,
 )
-from .strategy import StrategyIntentV1
+from .strategy import CandidateReviewV1, StrategyIntentV1
 
 Sha256Hex = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 PositiveInt = Annotated[int, Field(gt=0)]
@@ -580,13 +580,216 @@ class SimulationTapeSealV1(StrictKairosMessage):
         }
 
 
+class SimulationRiskDecisionV1(StrictKairosMessage):
+    """Deterministic SIM-only admission decision with review and book lineage.
+
+    This is deliberately not ``RiskTradeDecisionV1``: it carries neither a
+    trading mode, account, venue profile nor any authority to create an order.
+    It exists so the development simulator can prove the same candidate and
+    review path without impersonating the EVEDEX PAPER risk contour.
+    """
+
+    contract_version: Literal["simulation-risk-decision.v1"] = "simulation-risk-decision.v1"
+    execution_environment: Literal["SIMULATED"] = "SIMULATED"
+    decision_id: Sha256Hex | None = None
+    session: SimulationSessionV1
+    intent: StrategyIntentV1
+    review: CandidateReviewV1
+    selected_book_frame: RecordedTopNBookFrameV1 | None = None
+    session_id: Sha256Hex | None = None
+    intent_id: Sha256Hex | None = None
+    review_id: Sha256Hex | None = None
+    selected_book_frame_sha256: Sha256Hex | None = None
+    approved: bool
+    rejection_reasons: tuple[str, ...] = ()
+    quantity: NonNegativeFloat
+    price_cap: PositiveFloat | None = None
+    decided_at_ms: NonNegativeInt
+    admission_policy: Literal["RECORDED_BOOK_SIMULATION_ONLY"] = "RECORDED_BOOK_SIMULATION_ONLY"
+    paper_qualification_eligible: Literal[False] = False
+    trial15_eligible: Literal[False] = False
+    alpha_claim: Literal[False] = False
+
+    @model_validator(mode="after")
+    def validate_decision(self) -> Self:
+        session_id = self.session.session_id
+        intent_id = self.intent.intent_id
+        review_id = self.review.review_id
+        if session_id is None or intent_id is None or review_id is None:
+            raise ValueError(
+                "simulation risk decision requires canonical session, intent and review identities"
+            )
+        expected_values = {
+            "session_id": session_id,
+            "intent_id": intent_id,
+            "review_id": review_id,
+        }
+        for field_name, expected in expected_values.items():
+            supplied = getattr(self, field_name)
+            if supplied is not None and supplied != expected:
+                raise ValueError(f"{field_name} does not match the immutable simulation decision lineage")
+            object.__setattr__(self, field_name, expected)
+        if self.review.intent.intent_id != intent_id:
+            raise ValueError("simulation review and decision must carry the same immutable intent")
+        allowed = {(item.strategy_id, item.strategy_revision) for item in self.session.strategy_allowlist}
+        if (self.intent.strategy_id, self.intent.strategy_revision) not in allowed:
+            raise ValueError("simulation risk decision intent is not on the session allowlist")
+        if self.decided_at_ms < self.review.reviewed_at_ms:
+            raise ValueError("simulation risk decision cannot predate candidate review")
+        if not self.session.started_at_ms <= self.decided_at_ms <= self.session.ends_at_ms:
+            raise ValueError("simulation risk decision must occur inside its immutable session")
+        canonical_reasons = tuple(sorted(set(self.rejection_reasons)))
+        if any(not reason or reason != reason.strip() or len(reason) > 100 for reason in canonical_reasons):
+            raise ValueError("simulation rejection reasons must be normalized non-empty strings")
+        object.__setattr__(self, "rejection_reasons", canonical_reasons)
+        frame = self.selected_book_frame
+        frame_sha256 = None if frame is None else frame.frame_sha256
+        if self.selected_book_frame_sha256 is not None and self.selected_book_frame_sha256 != frame_sha256:
+            raise ValueError("selected_book_frame_sha256 does not match the immutable recorded frame")
+        object.__setattr__(self, "selected_book_frame_sha256", frame_sha256)
+        if self.approved:
+            if self.review.decision is not ReviewDecision.ALLOW:
+                raise ValueError("only an ALLOW review can be approved for simulator admission")
+            if self.decided_at_ms > self.intent.entry_expires_ts_ms:
+                raise ValueError("an expired strategy intent cannot be simulator-approved")
+            if self.quantity <= 0 or self.price_cap is None:
+                raise ValueError("an approved simulation decision requires quantity and price cap")
+            if canonical_reasons:
+                raise ValueError("an approved simulation decision cannot contain rejection reasons")
+            if frame is None or frame_sha256 is None or frame.continuity != "ADMITTED":
+                raise ValueError("an approved simulation decision requires an admitted recorded book frame")
+            if frame.tape_id != self.session.tape_id or frame.symbol != self.intent.symbol:
+                raise ValueError(
+                    "simulation decision frame must belong to the session tape and intent symbol"
+                )
+            if frame.persisted_at_ms > self.decided_at_ms:
+                raise ValueError("simulation decision cannot select a future recorded book frame")
+            if self.decided_at_ms - frame.persisted_at_ms > self.session.assumptions.maximum_book_age_ms:
+                raise ValueError("simulation decision selected book frame is stale")
+            if (
+                frame.persisted_at_ms - frame.exchange_at_ms
+                > self.session.assumptions.maximum_frame_latency_ms
+            ):
+                raise ValueError("simulation decision selected frame exceeds its frozen latency bound")
+            if self.intent.side is Side.LONG and self.price_cap < frame.asks[0].price:
+                raise ValueError("LONG simulation price cap cannot miss the selected recorded ask")
+            if self.intent.side is Side.SHORT and self.price_cap > frame.bids[0].price:
+                raise ValueError("SHORT simulation price cap cannot miss the selected recorded bid")
+        elif self.quantity != 0 or self.price_cap is not None or not canonical_reasons:
+            raise ValueError(
+                "a rejected simulation decision requires zero size, no price cap and rejection reasons"
+            )
+        expected_id = canonical_sha256(self.identity_payload())
+        if self.decision_id is not None and self.decision_id != expected_id:
+            raise ValueError("decision_id does not match the canonical simulation risk decision")
+        object.__setattr__(self, "decision_id", expected_id)
+        _set_default_envelope(self, stable_id=expected_id, timestamp_ms=self.decided_at_ms)
+        return self
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "admission_policy": self.admission_policy,
+            "alpha_claim": self.alpha_claim,
+            "approved": self.approved,
+            "contract_version": self.contract_version,
+            "decided_at_ms": self.decided_at_ms,
+            "execution_environment": self.execution_environment,
+            "intent_id": self.intent_id,
+            "paper_qualification_eligible": self.paper_qualification_eligible,
+            "price_cap": self.price_cap,
+            "quantity": self.quantity,
+            "rejection_reasons": self.rejection_reasons,
+            "review_id": self.review_id,
+            "selected_book_frame_sha256": self.selected_book_frame_sha256,
+            "session_id": self.session_id,
+            "trial15_eligible": self.trial15_eligible,
+        }
+
+
+class SimulationAdmissionV2(StrictKairosMessage):
+    """An admission derived only from an approved immutable SIM risk decision."""
+
+    contract_version: Literal["simulation-admission.v2"] = "simulation-admission.v2"
+    execution_environment: Literal["SIMULATED"] = "SIMULATED"
+    admission_id: Sha256Hex | None = None
+    decision: SimulationRiskDecisionV1
+    session: SimulationSessionV1 | None = None
+    intent: StrategyIntentV1 | None = None
+    review: CandidateReviewV1 | None = None
+    session_id: Sha256Hex | None = None
+    intent_sha256: Sha256Hex | None = None
+    review_id: Sha256Hex | None = None
+    decision_id: Sha256Hex | None = None
+    selected_book_frame_sha256: Sha256Hex | None = None
+    quantity: PositiveFloat | None = None
+    price_cap: PositiveFloat | None = None
+    admitted_at_ms: NonNegativeInt
+    admission_policy: Literal["APPROVED_SIMULATION_DECISION_ONLY"] = "APPROVED_SIMULATION_DECISION_ONLY"
+    paper_qualification_eligible: Literal[False] = False
+    trial15_eligible: Literal[False] = False
+    alpha_claim: Literal[False] = False
+
+    @model_validator(mode="after")
+    def validate_admission(self) -> Self:
+        decision = self.decision
+        if not decision.approved or decision.decision_id is None:
+            raise ValueError("simulation admission requires an approved canonical simulation risk decision")
+        expected_values = {
+            "session": decision.session,
+            "intent": decision.intent,
+            "review": decision.review,
+            "session_id": decision.session_id,
+            "intent_sha256": decision.intent_id,
+            "review_id": decision.review_id,
+            "decision_id": decision.decision_id,
+            "selected_book_frame_sha256": decision.selected_book_frame_sha256,
+            "quantity": decision.quantity,
+            "price_cap": decision.price_cap,
+        }
+        for field_name, expected in expected_values.items():
+            supplied = getattr(self, field_name)
+            if supplied is not None and supplied != expected:
+                raise ValueError(f"{field_name} does not match the immutable simulation risk decision")
+            object.__setattr__(self, field_name, expected)
+        if self.session is None or self.intent is None or self.quantity is None or self.price_cap is None:
+            raise ValueError("simulation admission requires complete immutable decision lineage")
+        if not decision.decided_at_ms <= self.admitted_at_ms <= self.intent.entry_expires_ts_ms:
+            raise ValueError("simulation admission must follow its decision and precede intent expiry")
+        if self.admitted_at_ms > self.session.ends_at_ms:
+            raise ValueError("simulation admission must occur inside its immutable session")
+        expected_id = canonical_sha256(self.identity_payload())
+        if self.admission_id is not None and self.admission_id != expected_id:
+            raise ValueError("admission_id does not match the canonical simulation admission")
+        object.__setattr__(self, "admission_id", expected_id)
+        _set_default_envelope(self, stable_id=expected_id, timestamp_ms=self.admitted_at_ms)
+        return self
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "admission_policy": self.admission_policy,
+            "alpha_claim": self.alpha_claim,
+            "contract_version": self.contract_version,
+            "decision_id": self.decision_id,
+            "execution_environment": self.execution_environment,
+            "intent_id": self.intent_sha256,
+            "paper_qualification_eligible": self.paper_qualification_eligible,
+            "price_cap": self.price_cap,
+            "quantity": self.quantity,
+            "review_id": self.review_id,
+            "selected_book_frame_sha256": self.selected_book_frame_sha256,
+            "session_id": self.session_id,
+            "trial15_eligible": self.trial15_eligible,
+            "admitted_at_ms": self.admitted_at_ms,
+        }
+
+
 class SimulationTradeV1(StrictKairosMessage):
     """Immutable admission lineage for one simulator-only trade lifecycle."""
 
     contract_version: Literal["simulation-trade.v1"] = "simulation-trade.v1"
     execution_environment: Literal["SIMULATED"] = "SIMULATED"
     trade_id: Sha256Hex | None = None
-    admission: SimulationAdmissionV1
+    admission: SimulationAdmissionV1 | SimulationAdmissionV2
     session_id: Sha256Hex | None = None
     admission_id: Sha256Hex | None = None
     intent_id: Sha256Hex | None = None
@@ -599,17 +802,19 @@ class SimulationTradeV1(StrictKairosMessage):
 
     @model_validator(mode="after")
     def validate_trade(self) -> Self:
-        admission_id = self.admission.admission_id
-        session_id = self.admission.session_id
-        intent_id = self.admission.intent_sha256
-        if admission_id is None or session_id is None or intent_id is None:
+        admission = self.admission
+        admission_id = admission.admission_id
+        session_id = admission.session_id
+        intent_id = admission.intent_sha256
+        intent = admission.intent
+        if admission_id is None or session_id is None or intent_id is None or intent is None:
             raise ValueError("simulation trade requires canonical admission lineage")
         expected_values = {
             "session_id": session_id,
             "admission_id": admission_id,
             "intent_id": intent_id,
-            "symbol": self.admission.intent.symbol,
-            "side": self.admission.intent.side,
+            "symbol": intent.symbol,
+            "side": intent.side,
         }
         for field_name, expected in expected_values.items():
             supplied = getattr(self, field_name)
@@ -770,7 +975,10 @@ class SimulationCommandReceiptV1(StrictKairosMessage):
         admission_id = self.command.admission_id
         intent_id = self.command.intent_id
         trade_id = self.command.trade_id
-        assumptions_sha256 = self.command.trade.admission.session.assumptions.assumptions_sha256
+        session = self.command.trade.admission.session
+        if session is None:
+            raise ValueError("simulation receipt requires the admission session")
+        assumptions_sha256 = session.assumptions.assumptions_sha256
         if any(
             value is None
             for value in (command_id, session_id, admission_id, intent_id, trade_id, assumptions_sha256)
