@@ -706,7 +706,7 @@ class SimulationRiskDecisionV1(StrictKairosMessage):
     session: SimulationSessionV1
     intent: StrategyIntentV1
     review: CandidateReviewV1
-    selected_book_frame: RecordedTopNBookFrameV1 | None = None
+    selected_book_frame: RecordedTopNBookFrameV1 | RecordedTopNBookFrameV2 | None = None
     session_id: Sha256Hex | None = None
     intent_id: Sha256Hex | None = None
     review_id: Sha256Hex | None = None

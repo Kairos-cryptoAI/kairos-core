@@ -463,6 +463,16 @@ def test_simulation_risk_admission_has_review_and_recorded_book_lineage() -> Non
         _admission_v2(evedex_profile="DEV")
 
 
+def test_simulation_risk_decision_preserves_v2_recorded_book_lineage() -> None:
+    decision = _simulation_decision(selected_book_frame=_frame_v2())
+
+    assert isinstance(decision.selected_book_frame, RecordedTopNBookFrameV2)
+    assert decision.selected_book_frame_sha256 == decision.selected_book_frame.frame_sha256
+    restored = SimulationRiskDecisionV1.from_json(decision.to_json())
+    assert isinstance(restored.selected_book_frame, RecordedTopNBookFrameV2)
+    assert restored == decision
+
+
 def test_simulated_events_and_results_cannot_claim_venue_or_alpha() -> None:
     admission = _admission()
     event = SimulationTradeEventV1(
