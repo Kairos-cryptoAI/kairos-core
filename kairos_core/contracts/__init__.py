@@ -16,8 +16,11 @@ from .paper import AccountSnapshotV2, OpenOrderSnapshotV2, PositionSnapshotV2, T
 from .routing import RouterDecision
 from .sentiment import SentimentSignal
 from .simulation import (
+    BookContinuityV2,
+    RawPayloadUtf8,
     RecordedBookLevelV1,
     RecordedTopNBookFrameV1,
+    RecordedTopNBookFrameV2,
     SimulationAdmissionV1,
     SimulationAdmissionV2,
     SimulationAssumptionsV1,
@@ -37,6 +40,7 @@ from .simulation import (
     SimulationTradeEventV2,
     SimulationTradeJournalHeadV1,
     SimulationTradeV1,
+    SourceReason,
 )
 from .strategic import StrategicAllocation
 from .strategy import (
@@ -87,8 +91,12 @@ __all__ = [
     "PositionSnapshotV2",
     "OpenOrderSnapshotV2",
     "AccountSnapshotV2",
+    "BookContinuityV2",
     "RecordedBookLevelV1",
     "RecordedTopNBookFrameV1",
+    "RecordedTopNBookFrameV2",
+    "RawPayloadUtf8",
+    "SourceReason",
     "SimulationAssumptionsV1",
     "SimulationStrategyRefV1",
     "SimulationSessionV1",

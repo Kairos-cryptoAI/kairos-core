@@ -8,6 +8,7 @@ readiness decision.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Annotated, Literal, Self
 
 from pydantic import Field, field_validator, model_validator
@@ -29,6 +30,9 @@ PositiveFloat = Annotated[float, Field(gt=0)]
 NonNegativeFloat = Annotated[float, Field(ge=0)]
 SimulationSymbol = Literal["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]
 BookContinuity = Literal["ADMITTED", "GAP", "RECONNECT", "UNKNOWN", "UNAVAILABLE"]
+BookContinuityV2 = Literal["ADMITTED", "GAP", "RECONNECT", "UNKNOWN", "UNAVAILABLE", "CLOCK_SKEW"]
+RawPayloadUtf8 = Annotated[str, Field(min_length=1)]
+SourceReason = Annotated[str, Field(pattern=r"^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$")]
 SimulationEventType = Literal[
     "ADMITTED",
     "ENTRY_FILLED",
@@ -148,6 +152,108 @@ class RecordedTopNBookFrameV1(StrictKairosMessage):
             "previous_frame_sha256": self.previous_frame_sha256,
             "raw_payload_sha256": self.raw_payload_sha256,
             "received_at_ms": self.received_at_ms,
+            "stream_epoch": self.stream_epoch,
+            "stream_kind": self.stream_kind,
+            "symbol": self.symbol,
+            "tape_id": self.tape_id,
+            "tape_sequence": self.tape_sequence,
+        }
+
+    def canonical_frame_bytes(self) -> bytes:
+        return canonical_json_bytes(self.identity_payload())
+
+
+class RecordedTopNBookFrameV2(StrictKairosMessage):
+    """Hash-chained book frame retaining the exact recorder payload text.
+
+    V2 deliberately does not alter V1's payload or hash identity.  It records
+    the original UTF-8 source text and verifies its digest at the contract
+    boundary, so a tape can later prove which bytes the recorder received.
+    """
+
+    contract_version: Literal["sim-book-frame.v2"] = "sim-book-frame.v2"
+    execution_environment: Literal["SIMULATED"] = "SIMULATED"
+    market_data_venue: Literal["BINANCE_UM"] = "BINANCE_UM"
+    stream_kind: Literal["TOP_N_SNAPSHOT"] = "TOP_N_SNAPSHOT"
+    tape_id: str = Field(..., min_length=1, max_length=128)
+    stream_epoch: str = Field(..., min_length=1, max_length=128)
+    symbol: SimulationSymbol
+    tape_sequence: PositiveInt
+    exchange_update_id: PositiveInt
+    exchange_at_ms: NonNegativeInt
+    received_at_ms: NonNegativeInt
+    persisted_at_ms: NonNegativeInt
+    raw_payload: RawPayloadUtf8
+    raw_payload_sha256: Sha256Hex
+    previous_frame_sha256: Sha256Hex | None = None
+    continuity: BookContinuityV2
+    source_reason: SourceReason
+    bids: tuple[RecordedBookLevelV1, ...] = Field(default_factory=tuple, max_length=100)
+    asks: tuple[RecordedBookLevelV1, ...] = Field(default_factory=tuple, max_length=100)
+    frame_sha256: Sha256Hex | None = None
+
+    @field_validator("tape_id", "stream_epoch")
+    @classmethod
+    def validate_identifier(cls, value: str, info) -> str:
+        return _normalized_identifier(value, name=info.field_name)
+
+    @field_validator("raw_payload")
+    @classmethod
+    def validate_raw_payload_utf8(cls, value: str) -> str:
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError("raw_payload must be encodable as UTF-8 text") from exc
+        return value
+
+    @model_validator(mode="after")
+    def validate_frame(self) -> Self:
+        if not self.exchange_at_ms <= self.received_at_ms <= self.persisted_at_ms:
+            raise ValueError("book frame requires exchange <= received <= persisted timestamps")
+        if self.tape_sequence == 1 and self.previous_frame_sha256 is not None:
+            raise ValueError("the first tape frame cannot reference a predecessor")
+        if self.tape_sequence > 1 and self.previous_frame_sha256 is None:
+            raise ValueError("a non-root tape frame must reference its predecessor")
+        if self.previous_frame_sha256 == self.raw_payload_sha256:
+            raise ValueError("a book frame predecessor cannot equal its raw payload hash")
+        if hashlib.sha256(self.raw_payload.encode("utf-8")).hexdigest() != self.raw_payload_sha256:
+            raise ValueError("raw_payload_sha256 does not match raw_payload")
+        if self.continuity == "ADMITTED":
+            if not self.bids or not self.asks:
+                raise ValueError("an admitted book frame requires both displayed sides")
+        elif self.bids or self.asks:
+            raise ValueError("a non-admitted book frame must not contain displayed levels")
+        bid_prices = tuple(level.price for level in self.bids)
+        ask_prices = tuple(level.price for level in self.asks)
+        if bid_prices != tuple(sorted(set(bid_prices), reverse=True)):
+            raise ValueError("book bids must be unique and strictly descending")
+        if ask_prices != tuple(sorted(set(ask_prices))):
+            raise ValueError("book asks must be unique and strictly ascending")
+        if self.bids and self.asks and self.bids[0].price >= self.asks[0].price:
+            raise ValueError("book must not be locked or crossed")
+        expected = canonical_sha256(self.identity_payload())
+        if self.frame_sha256 is not None and self.frame_sha256 != expected:
+            raise ValueError("frame_sha256 does not match the canonical recorded book frame")
+        object.__setattr__(self, "frame_sha256", expected)
+        _set_default_envelope(self, stable_id=expected, timestamp_ms=self.persisted_at_ms)
+        return self
+
+    def identity_payload(self) -> dict[str, object]:
+        return {
+            "asks": [level.model_dump(mode="json") for level in self.asks],
+            "bids": [level.model_dump(mode="json") for level in self.bids],
+            "continuity": self.continuity,
+            "contract_version": self.contract_version,
+            "exchange_at_ms": self.exchange_at_ms,
+            "exchange_update_id": self.exchange_update_id,
+            "execution_environment": self.execution_environment,
+            "market_data_venue": self.market_data_venue,
+            "persisted_at_ms": self.persisted_at_ms,
+            "previous_frame_sha256": self.previous_frame_sha256,
+            "raw_payload": self.raw_payload,
+            "raw_payload_sha256": self.raw_payload_sha256,
+            "received_at_ms": self.received_at_ms,
+            "source_reason": self.source_reason,
             "stream_epoch": self.stream_epoch,
             "stream_kind": self.stream_kind,
             "symbol": self.symbol,

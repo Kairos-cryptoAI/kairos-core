@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 
 import pytest
@@ -16,6 +17,7 @@ from kairos_core import (
     ReasoningEffort,
     RecordedBookLevelV1,
     RecordedTopNBookFrameV1,
+    RecordedTopNBookFrameV2,
     ReviewDecision,
     Side,
     SimulationAdmissionV1,
@@ -47,6 +49,7 @@ SHA_B = "b" * 64
 SHA_C = "c" * 64
 SHA_D = "d" * 64
 SHA_E = "e" * 64
+RAW_PAYLOAD = '{"lastUpdateId":100,"bids":[["99.9","2.0"]],"asks":[["100.1","2.0"]]}'
 
 
 def _intent(**overrides: object) -> StrategyIntentV1:
@@ -107,6 +110,28 @@ def _frame(**overrides: object) -> RecordedTopNBookFrameV1:
     }
     values.update(overrides)
     return RecordedTopNBookFrameV1(**values)
+
+
+def _frame_v2(**overrides: object) -> RecordedTopNBookFrameV2:
+    values: dict[str, object] = {
+        "source": "sim-recorder",
+        "tape_id": "binance-20260919",
+        "stream_epoch": "epoch-1",
+        "symbol": "BTCUSDT",
+        "tape_sequence": 1,
+        "exchange_update_id": 100,
+        "exchange_at_ms": T0 + 60_000,
+        "received_at_ms": T0 + 60_010,
+        "persisted_at_ms": T0 + 60_020,
+        "raw_payload": RAW_PAYLOAD,
+        "raw_payload_sha256": hashlib.sha256(RAW_PAYLOAD.encode("utf-8")).hexdigest(),
+        "continuity": "ADMITTED",
+        "source_reason": "SNAPSHOT_RECEIVED",
+        "bids": (RecordedBookLevelV1(price=99.9, quantity=2.0),),
+        "asks": (RecordedBookLevelV1(price=100.1, quantity=2.0),),
+    }
+    values.update(overrides)
+    return RecordedTopNBookFrameV2(**values)
 
 
 def _assumptions(**overrides: object) -> SimulationAssumptionsV1:
@@ -299,6 +324,67 @@ def test_recorded_frame_is_hash_chained_deterministic_and_strict() -> None:
         _frame(tape_sequence=2)
     with pytest.raises(ValidationError):
         _frame(unknown="not understood")
+
+
+def test_recorded_frame_v1_wire_and_hash_identity_are_unchanged() -> None:
+    frame = _frame()
+    assert frame.contract_version == "sim-book-frame.v1"
+    assert "raw_payload" not in frame.identity_payload()
+    assert "source_reason" not in frame.identity_payload()
+    assert "raw_payload" not in frame.to_payload()
+    assert frame.frame_sha256 == hashlib.sha256(frame.canonical_frame_bytes()).hexdigest()
+    with pytest.raises(ValidationError):
+        _frame(raw_payload=RAW_PAYLOAD)
+
+
+def test_recorded_frame_v2_retains_and_hashes_the_original_utf8_payload() -> None:
+    frame = _frame_v2()
+    assert frame.contract_version == "sim-book-frame.v2"
+    assert frame.raw_payload == RAW_PAYLOAD
+    assert frame.raw_payload_sha256 == hashlib.sha256(RAW_PAYLOAD.encode("utf-8")).hexdigest()
+    assert frame.frame_sha256 == hashlib.sha256(frame.canonical_frame_bytes()).hexdigest()
+    assert frame.message_id == frame.frame_sha256
+    assert RecordedTopNBookFrameV2.from_json(frame.to_json()) == frame
+
+
+def test_recorded_frame_v2_requires_raw_payload_and_source_reason() -> None:
+    payload = _frame_v2().model_dump()
+    payload.pop("raw_payload")
+    with pytest.raises(ValidationError):
+        RecordedTopNBookFrameV2.model_validate(payload)
+
+    payload = _frame_v2().model_dump()
+    payload.pop("source_reason")
+    with pytest.raises(ValidationError):
+        RecordedTopNBookFrameV2.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"raw_payload_sha256": SHA_A},
+        {"raw_payload": None},
+        {"source_reason": "snapshot_received"},
+        {"source_reason": "SNAPSHOT-RECEIVED"},
+        {"continuity": "GAP", "bids": (RecordedBookLevelV1(price=99.9, quantity=2.0),), "asks": ()},
+        {"continuity": "ADMITTED", "bids": (), "asks": ()},
+    ],
+)
+def test_recorded_frame_v2_rejects_invalid_recorder_evidence(override: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        _frame_v2(**override)
+
+
+def test_recorded_frame_v2_records_clock_skew_as_an_empty_terminal_frame() -> None:
+    frame = _frame_v2(
+        continuity="CLOCK_SKEW",
+        source_reason="EXCHANGE_CLOCK_SKEW",
+        bids=(),
+        asks=(),
+    )
+    assert frame.continuity == "CLOCK_SKEW"
+    assert frame.bids == ()
+    assert frame.asks == ()
 
 
 @pytest.mark.parametrize(
