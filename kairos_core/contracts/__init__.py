@@ -6,6 +6,7 @@ from .account import AccountSnapshot, PositionSnapshot
 from .base import SCHEMA_VERSION, KairosMessage, canonical_json_bytes, canonical_sha256
 from .execution import ExecutionReport, OrderIntent, ValidatedOrder
 from .health import LLMHealthEvent
+from .llm_proposal import LLMProposalModelProvenanceV1, LLMTradeProposalV1
 from .market import (
     DerivativesMetrics,
     MarketSnapshot,
@@ -77,6 +78,8 @@ __all__ = [
     "ValidatedOrder",
     "ExecutionReport",
     "LLMHealthEvent",
+    "LLMProposalModelProvenanceV1",
+    "LLMTradeProposalV1",
     "ClosedBarEventV1",
     "ExitPlanV1",
     "StrategyProvenanceV1",

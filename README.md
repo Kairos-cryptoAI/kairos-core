@@ -70,6 +70,24 @@ zero. Producers can use `canonical_sha256()` for auxiliary configuration and
 feature fingerprints. With deterministic inputs, the default message envelope,
 wire bytes and identity are identical across Windows research and Linux runtime.
 
+## LLM-generated research proposals
+
+`LLMTradeProposalV1` and `Topics.LLM_TRADE_PROPOSAL` define a separate,
+advisory-only research output. Its direction is a `LONG_BIAS` or `SHORT_BIAS`
+hypothesis (or `NO_PROPOSAL` / `DEFER`), not a `Side`, `StrategyIntentV1`,
+review approval, `RiskTradeDecisionV1`, or order. The contract has no venue,
+entry/exit price, quantity, leverage, or execution fields and forbids unknown
+fields. Directional hypotheses require time-bounded, cited evidence observed
+no later than the declared market snapshot.
+
+The contract alone does not attest its producer. A future adapter must derive
+campaign/sample scope and model provenance from trusted inputs and the completed
+budgeted gateway result; those fields must never be copied from provider output.
+No publisher or trading consumer is added here. A bus topic name is not an ACL,
+so Risk Manager and Execution must continue to accept only their existing exact
+review/risk contracts. Proposals remain research artifacts until an independent,
+pre-registered evaluator and a separate promotion path qualify them.
+
 ## Local development
 
 Install [uv](https://docs.astral.sh/uv/) once, then let the checked-in lockfile

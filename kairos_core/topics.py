@@ -14,6 +14,10 @@ class Topics:
     STRATEGY_INTENT = "kairos.strategy.intent.v1"  # Strategy Engine -> Router
     STRATEGY_ROUTE = "kairos.strategy.route.v1"  # Router -> Aggregator
     CANDIDATE_REVIEW = "kairos.aggregator.review.v1"  # Aggregator -> Risk Manager
+    # Advisory research output only.  Topic names are not an ACL; consumers
+    # must still validate their exact contract and must not subscribe to this
+    # topic from Risk Manager or Execution.
+    LLM_TRADE_PROPOSAL = "kairos.research.llm_trade_proposal.v1"
     VENUE_QUALITY = "kairos.venue.quality.v1"  # EVEDEX gate -> Risk Manager/TCA
     RISK_TRADE_DECISION = "kairos.risk.trade_decision.v1"  # Risk Manager -> PAPER execution
     TRADE_EXECUTION_EVENT = "kairos.execution.trade_event.v1"  # Execution -> persistence/audit

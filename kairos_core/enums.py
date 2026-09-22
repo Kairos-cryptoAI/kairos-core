@@ -141,6 +141,19 @@ class ReviewDecision(StrEnum):
     DEFER = "DEFER"
 
 
+class LLMProposalAction(StrEnum):
+    """Research-only direction emitted by an LLM proposal experiment.
+
+    These values are advisory labels, not :class:`Side`, a strategy intent,
+    an approval, or an execution instruction.
+    """
+
+    LONG_BIAS = "LONG_BIAS"
+    SHORT_BIAS = "SHORT_BIAS"
+    NO_PROPOSAL = "NO_PROPOSAL"
+    DEFER = "DEFER"
+
+
 class CandidateReviewTier(StrEnum):
     """Aggregator path selected by the deterministic candidate router."""
 
