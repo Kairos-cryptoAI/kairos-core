@@ -11,6 +11,7 @@ from __future__ import annotations
 __version__ = "0.3.0"
 
 from .contracts import (
+    RESEARCH_ARMS,
     AccountSnapshotV2,
     BookContinuityV2,
     CandidateReviewV1,
@@ -38,7 +39,10 @@ from .contracts import (
     RecordedBookLevelV1,
     RecordedTopNBookFrameV1,
     RecordedTopNBookFrameV2,
+    ResearchCoverageSealV1,
     ResearchDecisionSampleV1,
+    ResearchObservationScheduleV1,
+    ResearchObservationWindowV1,
     RiskTradeDecisionV1,
     RouterDecision,
     SentimentSignal,
@@ -149,6 +153,10 @@ __all__ = [
     "LLMCallFailureClass",
     "LLMCallFailureV1",
     "ResearchDecisionSampleV1",
+    "RESEARCH_ARMS",
+    "ResearchCoverageSealV1",
+    "ResearchObservationScheduleV1",
+    "ResearchObservationWindowV1",
     "ClosedBarEventV1",
     "ExitPlanV1",
     "StrategyProvenanceV1",

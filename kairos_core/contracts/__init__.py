@@ -17,6 +17,12 @@ from .market import (
 )
 from .paper import AccountSnapshotV2, OpenOrderSnapshotV2, PositionSnapshotV2, TradeExecutionEventV1
 from .research_decision import ResearchDecisionSampleV1
+from .research_schedule import (
+    RESEARCH_ARMS,
+    ResearchCoverageSealV1,
+    ResearchObservationScheduleV1,
+    ResearchObservationWindowV1,
+)
 from .routing import RouterDecision
 from .sentiment import SentimentSignal
 from .simulation import (
@@ -87,6 +93,10 @@ __all__ = [
     "LLMCallFailureClass",
     "LLMCallFailureV1",
     "ResearchDecisionSampleV1",
+    "RESEARCH_ARMS",
+    "ResearchCoverageSealV1",
+    "ResearchObservationScheduleV1",
+    "ResearchObservationWindowV1",
     "ClosedBarEventV1",
     "ExitPlanV1",
     "StrategyProvenanceV1",
