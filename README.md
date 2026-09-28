@@ -74,16 +74,27 @@ wire bytes and identity are identical across Windows research and Linux runtime.
 
 `LLMTradeProposalV1` and `Topics.LLM_TRADE_PROPOSAL` define a separate,
 advisory-only research output. Its direction is a `LONG_BIAS` or `SHORT_BIAS`
-hypothesis (or `NO_PROPOSAL` / `DEFER`), not a `Side`, `StrategyIntentV1`,
+hypothesis; `VOLATILITY_ALERT` records cited expected movement without claiming a
+direction. `NO_PROPOSAL` and `DEFER` are separate outcomes. None is a `Side`, `StrategyIntentV1`,
 review approval, `RiskTradeDecisionV1`, or order. The contract has no venue,
 entry/exit price, quantity, leverage, or execution fields and forbids unknown
-fields. Directional hypotheses require time-bounded, cited evidence observed
-no later than the declared market snapshot.
+fields. Candidate hypotheses require time-bounded, cited evidence observed no
+later than the declared market snapshot; a volatility alert expires within 24 hours.
 
-The contract alone does not attest its producer. A future adapter must derive
+`ResearchDecisionSampleV1` records one SIM-only paired strategy/LLM observation.
+`NO_INTENT` is distinct from `NOT_EVALUATED`, and `CALL_FAILED` is distinct from
+`NOT_CALLED`, `NO_PROPOSAL`, or `DEFER`. An attempted call failure links an immutable
+`LLMCallFailureV1` receipt, not a fabricated model proposal. Its caller-attested
+observation time must precede the causal pairing clock. Late receipts retain their
+actual timestamp but cannot be paired as an in-window LLM decision. These types
+do not themselves attest that the strategy evaluator or gateway ran. A separate
+pre-registered schedule, durable attempt/timeout ledger, and source-receipt checks
+are still needed to establish a complete denominator for matched A/B research.
+
+The contract alone does not attest its producer. The proposal adapter derives
 campaign/sample scope and model provenance from trusted inputs and the completed
 budgeted gateway result; those fields must never be copied from provider output.
-No publisher or trading consumer is added here. A bus topic name is not an ACL,
+No trading consumer is added here. A bus topic name is not an ACL,
 so Risk Manager and Execution must continue to accept only their existing exact
 review/risk contracts. Proposals remain research artifacts until an independent,
 pre-registered evaluator and a separate promotion path qualify them.

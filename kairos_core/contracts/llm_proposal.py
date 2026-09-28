@@ -22,6 +22,7 @@ Identifier = Annotated[
     Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$"),
 ]
 Symbol = Annotated[StrictStr, Field(min_length=2, max_length=32, pattern=r"^[A-Z0-9][A-Z0-9._-]*$")]
+MAX_VOLATILITY_ALERT_VALIDITY_MS = 86_400_000
 
 
 class LLMProposalModelProvenanceV1(StrictValueModel):
@@ -81,13 +82,22 @@ class LLMTradeProposalV1(StrictKairosMessage):
     def validate_proposal(self) -> Self:
         if self.expires_at_ts_ms < self.market_as_of_ts_ms:
             raise ValueError("proposal cannot expire before its market snapshot")
-        if self.action in (LLMProposalAction.LONG_BIAS, LLMProposalAction.SHORT_BIAS):
+        if self.action in (
+            LLMProposalAction.LONG_BIAS,
+            LLMProposalAction.SHORT_BIAS,
+            LLMProposalAction.VOLATILITY_ALERT,
+        ):
             if self.expires_at_ts_ms <= self.market_as_of_ts_ms:
-                raise ValueError("directional proposals must have a non-empty validity window")
+                raise ValueError("candidate hypotheses must have a non-empty validity window")
             if not self.evidence:
-                raise ValueError("directional proposals require cited evidence")
+                raise ValueError("candidate hypotheses require cited evidence")
             if any(item.observed_at_ms is None for item in self.evidence):
-                raise ValueError("directional proposal evidence requires an observation timestamp")
+                raise ValueError("candidate hypothesis evidence requires an observation timestamp")
+        if (
+            self.action is LLMProposalAction.VOLATILITY_ALERT
+            and self.expires_at_ts_ms - self.market_as_of_ts_ms > MAX_VOLATILITY_ALERT_VALIDITY_MS
+        ):
+            raise ValueError("volatility alert validity cannot exceed 24 hours")
         if any(
             item.observed_at_ms is not None and item.observed_at_ms > self.market_as_of_ts_ms
             for item in self.evidence

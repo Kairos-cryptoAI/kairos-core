@@ -6,7 +6,9 @@ from .account import AccountSnapshot, PositionSnapshot
 from .base import SCHEMA_VERSION, KairosMessage, canonical_json_bytes, canonical_sha256
 from .execution import ExecutionReport, OrderIntent, ValidatedOrder
 from .health import LLMHealthEvent
+from .llm_call_failure import LLMCallFailureClass, LLMCallFailureV1
 from .llm_proposal import LLMProposalModelProvenanceV1, LLMTradeProposalV1
+from .llm_proposal_completion import LLMProposalCompletionReceiptV1
 from .market import (
     DerivativesMetrics,
     MarketSnapshot,
@@ -14,6 +16,7 @@ from .market import (
     TechnicalIndicators,
 )
 from .paper import AccountSnapshotV2, OpenOrderSnapshotV2, PositionSnapshotV2, TradeExecutionEventV1
+from .research_decision import ResearchDecisionSampleV1
 from .routing import RouterDecision
 from .sentiment import SentimentSignal
 from .simulation import (
@@ -80,6 +83,10 @@ __all__ = [
     "LLMHealthEvent",
     "LLMProposalModelProvenanceV1",
     "LLMTradeProposalV1",
+    "LLMProposalCompletionReceiptV1",
+    "LLMCallFailureClass",
+    "LLMCallFailureV1",
+    "ResearchDecisionSampleV1",
     "ClosedBarEventV1",
     "ExitPlanV1",
     "StrategyProvenanceV1",

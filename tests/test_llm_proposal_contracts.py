@@ -99,6 +99,24 @@ def test_non_candidate_actions_are_valid_without_directional_evidence(
     assert proposal.evidence == ()
 
 
+def test_volatility_alert_has_no_direction_but_requires_cited_bounded_evidence() -> None:
+    proposal = _proposal(action=LLMProposalAction.VOLATILITY_ALERT)
+
+    assert proposal.action is LLMProposalAction.VOLATILITY_ALERT
+    assert proposal.proposal_id
+    assert LLMTradeProposalV1.from_json(proposal.to_json()) == proposal
+    assert not isinstance(proposal.action, Side)
+    for override in (
+        {"evidence": ()},
+        {"evidence": (_evidence(observed_at_ms=None),)},
+        {"evidence": (_evidence(observed_at_ms=T0 + 1),)},
+        {"expires_at_ts_ms": T0},
+        {"expires_at_ts_ms": T0 + 86_400_001},
+    ):
+        with pytest.raises(ValidationError):
+            _proposal(action=LLMProposalAction.VOLATILITY_ALERT, **override)
+
+
 @pytest.mark.parametrize(
     "override",
     [
