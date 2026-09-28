@@ -56,6 +56,7 @@ class ResearchDecisionSampleV1(StrictKairosMessage):
 
     campaign_id: Identifier
     arm_id: Identifier
+    arm_protocol_digest: Sha256Hex | None = None
     sample_id: Identifier
     symbol: Symbol
     timeframe: Identifier
@@ -235,7 +236,7 @@ class ResearchDecisionSampleV1(StrictKairosMessage):
     def identity_payload(self) -> dict[str, object]:
         """Canonical research facts; generic bus-envelope metadata is excluded."""
 
-        return {
+        payload: dict[str, object] = {
             "arm_id": self.arm_id,
             "authority": self.authority,
             "campaign_id": self.campaign_id,
@@ -269,6 +270,11 @@ class ResearchDecisionSampleV1(StrictKairosMessage):
             "symbol": self.symbol,
             "timeframe": self.timeframe,
         }
+        # Preserve canonical IDs for legacy unscheduled observations. Scheduled
+        # records include this link so their sample ID commits to the frozen arm.
+        if self.arm_protocol_digest is not None:
+            payload["arm_protocol_digest"] = self.arm_protocol_digest
+        return payload
 
     def canonical_sample_bytes(self) -> bytes:
         return canonical_json_bytes(self.identity_payload())

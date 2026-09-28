@@ -3,6 +3,14 @@
 from __future__ import annotations
 
 from .account import AccountSnapshot, PositionSnapshot
+from .adaptive_candidate_protocol import (
+    AdaptiveCandidateProtocolArmV1,
+    AdaptiveCandidateProtocolV1,
+    AdaptiveCandidateProvider,
+    LLMProposalAdaptiveCandidateArmV1,
+    StrategyOnlyAdaptiveCandidateArmV1,
+    StrategyReviewAdaptiveCandidateArmV1,
+)
 from .base import SCHEMA_VERSION, KairosMessage, canonical_json_bytes, canonical_sha256
 from .execution import ExecutionReport, OrderIntent, ValidatedOrder
 from .health import LLMHealthEvent
@@ -97,6 +105,12 @@ __all__ = [
     "ResearchCoverageSealV1",
     "ResearchObservationScheduleV1",
     "ResearchObservationWindowV1",
+    "AdaptiveCandidateProtocolArmV1",
+    "AdaptiveCandidateProvider",
+    "AdaptiveCandidateProtocolV1",
+    "StrategyOnlyAdaptiveCandidateArmV1",
+    "StrategyReviewAdaptiveCandidateArmV1",
+    "LLMProposalAdaptiveCandidateArmV1",
     "ClosedBarEventV1",
     "ExitPlanV1",
     "StrategyProvenanceV1",
