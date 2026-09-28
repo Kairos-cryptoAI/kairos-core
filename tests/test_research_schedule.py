@@ -6,6 +6,7 @@ import pytest
 
 from kairos_core import (
     RESEARCH_ARMS,
+    ResearchCoverageSealV1,
     ResearchDecisionSampleV1,
     ResearchObservationScheduleV1,
     ResearchObservationWindowV1,
@@ -106,6 +107,32 @@ def test_canonical_schedule_and_all_outcome_windows_are_covered() -> None:
     assert seal.authority == "SIM_RESEARCH_ONLY"
     assert "order" not in seal.to_payload()
     assert "risk_decision" not in seal.to_payload()
+
+
+def test_coverage_seal_links_candidate_protocol_without_changing_legacy_identity() -> None:
+    schedule = _schedule()
+    legacy = evaluate_research_coverage(schedule, _complete(schedule))
+    linked = ResearchCoverageSealV1(
+        campaign_id=legacy.campaign_id,
+        schedule_digest=legacy.schedule_digest,
+        candidate_protocol_digest="f" * 64,
+        expected_result_count=legacy.expected_result_count,
+        result_ids_sha256=legacy.result_ids_sha256,
+    )
+
+    assert legacy.candidate_protocol_digest is None
+    assert "candidate_protocol_digest" not in legacy.identity_payload()
+    assert linked.identity_payload()["candidate_protocol_digest"] == "f" * 64
+    assert linked.coverage_digest == canonical_sha256(linked.identity_payload())
+    assert linked.coverage_digest != legacy.coverage_digest
+
+    with pytest.raises(ValueError, match="coverage_digest"):
+        ResearchCoverageSealV1.model_validate(
+            {
+                **linked.model_dump(mode="json"),
+                "candidate_protocol_digest": "0" * 64,
+            }
+        )
 
 
 def test_missing_duplicate_and_post_hoc_observations_fail_closed() -> None:

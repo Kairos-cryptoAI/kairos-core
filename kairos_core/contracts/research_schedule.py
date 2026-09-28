@@ -124,6 +124,7 @@ class ResearchCoverageSealV1(StrictKairosMessage):
     coverage_digest: Sha256Hex | None = None
     campaign_id: Identifier
     schedule_digest: Sha256Hex
+    candidate_protocol_digest: Sha256Hex | None = None
     expected_result_count: Annotated[StrictInt, Field(ge=3)]
     result_ids_sha256: Sha256Hex
 
@@ -142,7 +143,7 @@ class ResearchCoverageSealV1(StrictKairosMessage):
         return self
 
     def identity_payload(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "authority": self.authority,
             "campaign_id": self.campaign_id,
             "contract_version": self.contract_version,
@@ -151,3 +152,8 @@ class ResearchCoverageSealV1(StrictKairosMessage):
             "schedule_digest": self.schedule_digest,
             "source": self.source,
         }
+        # Legacy seals keep their canonical ID. Adaptive-protocol campaigns
+        # include this link so the coverage seal commits to the exact roster.
+        if self.candidate_protocol_digest is not None:
+            payload["candidate_protocol_digest"] = self.candidate_protocol_digest
+        return payload
