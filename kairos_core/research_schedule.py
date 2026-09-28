@@ -53,6 +53,11 @@ def evaluate_research_coverage(
             if getattr(sample, field) != getattr(window, field):
                 raise ValueError(f"research observation {field} differs from the frozen window")
         if (
+            window.market_snapshot_sha256 is not None
+            and sample.market_snapshot_sha256 != window.market_snapshot_sha256
+        ):
+            raise ValueError("research observation market snapshot differs from the frozen window")
+        if (
             sample.strategy_id != schedule.strategy_id
             or sample.strategy_revision != schedule.strategy_revision
         ):

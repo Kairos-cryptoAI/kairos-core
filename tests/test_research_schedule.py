@@ -27,6 +27,7 @@ def _schedule() -> ResearchObservationScheduleV1:
                 symbol="BTCUSDT",
                 timeframe="1m",
                 market_as_of_ts_ms=1_760_000_000_000,
+                market_snapshot_sha256="c" * 64,
                 paired_at_ts_ms=1_760_000_001_000,
                 sample_deadline_ts_ms=1_760_000_010_000,
             ),
@@ -35,6 +36,7 @@ def _schedule() -> ResearchObservationScheduleV1:
                 symbol="ETHUSDT",
                 timeframe="1m",
                 market_as_of_ts_ms=1_760_000_060_000,
+                market_snapshot_sha256="c" * 64,
                 paired_at_ts_ms=1_760_000_061_000,
                 sample_deadline_ts_ms=1_760_000_070_000,
             ),
@@ -133,6 +135,16 @@ def test_altered_schedule_or_sample_key_and_late_window_fail_closed() -> None:
     altered = samples[0].model_copy(update={"market_snapshot_sha256": "f" * 64})
     with pytest.raises(ValueError, match="ID changed"):
         evaluate_research_coverage(schedule, [altered, *samples[1:]])
+    different_snapshot = ResearchDecisionSampleV1.model_validate(
+        {
+            **samples[0].to_payload(),
+            "sample_record_id": None,
+            "market_snapshot_sha256": "f" * 64,
+            "strategy_market_snapshot_sha256": "f" * 64,
+        }
+    )
+    with pytest.raises(ValueError, match="market snapshot differs from the frozen window"):
+        evaluate_research_coverage(schedule, [different_snapshot, *samples[1:]])
     with pytest.raises(ValueError, match="deadline"):
         ResearchObservationWindowV1(
             sample_id="late",

@@ -35,6 +35,7 @@ class ResearchObservationWindowV1(StrictValueModel):
     symbol: Annotated[StrictStr, Field(min_length=2, max_length=32, pattern=r"^[A-Z0-9][A-Z0-9._-]*$")]
     timeframe: Identifier
     market_as_of_ts_ms: TimestampMs
+    market_snapshot_sha256: Sha256Hex | None = None
     paired_at_ts_ms: TimestampMs
     sample_deadline_ts_ms: TimestampMs
 
