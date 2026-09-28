@@ -181,3 +181,44 @@ def test_strategy_only_arm_never_uses_llm_and_arm_set_cannot_drift() -> None:
             arm_ids=("strategy-review", "strategy-only", "llm-proposal-research"),
             windows=(schedule.windows[0],),
         )
+
+
+def test_no_intent_arms_must_share_the_exact_strategy_evaluation() -> None:
+    schedule = _schedule()
+    samples = _complete(schedule)
+    changed_evaluation = ResearchDecisionSampleV1.model_validate(
+        {
+            **samples[1].to_payload(),
+            "sample_record_id": None,
+            "strategy_evaluation_sha256": "f" * 64,
+        }
+    )
+
+    with pytest.raises(ValueError, match="baseline strategy lineage"):
+        evaluate_research_coverage(schedule, [samples[0], changed_evaluation, *samples[2:]])
+
+
+def test_directional_arms_must_share_the_exact_strategy_intent() -> None:
+    schedule = _schedule()
+    samples = [
+        ResearchDecisionSampleV1.model_validate(
+            {
+                **sample.to_payload(),
+                "sample_record_id": None,
+                "strategy_outcome": "LONG",
+                "strategy_intent_id": "a" * 64,
+                "strategy_intent_expires_at_ts_ms": sample.sample_deadline_ts_ms + 1_000,
+            }
+        )
+        for sample in _complete(schedule)
+    ]
+    changed_intent = ResearchDecisionSampleV1.model_validate(
+        {
+            **samples[1].to_payload(),
+            "sample_record_id": None,
+            "strategy_intent_id": "f" * 64,
+        }
+    )
+
+    with pytest.raises(ValueError, match="baseline strategy lineage"):
+        evaluate_research_coverage(schedule, [samples[0], changed_intent, *samples[2:]])

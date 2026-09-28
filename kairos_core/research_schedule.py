@@ -32,7 +32,7 @@ def evaluate_research_coverage(
     windows = {window.sample_id: window for window in schedule.windows}
     observed: dict[tuple[str, str], ResearchDecisionSampleV1] = {}
     snapshot_by_sample: dict[str, str] = {}
-    strategy_outcome_by_sample: dict[str, str] = {}
+    baseline_lineage_by_sample: dict[str, tuple[str | int | None, ...]] = {}
     for sample in samples:
         if type(sample) is not ResearchDecisionSampleV1:
             raise TypeError("coverage accepts only ResearchDecisionSampleV1 observations")
@@ -71,9 +71,17 @@ def evaluate_research_coverage(
         prior_snapshot = snapshot_by_sample.setdefault(sample.sample_id, sample.market_snapshot_sha256)
         if sample.market_snapshot_sha256 != prior_snapshot:
             raise ValueError("matched arms disagree on their market snapshot")
-        prior_outcome = strategy_outcome_by_sample.setdefault(sample.sample_id, sample.strategy_outcome)
-        if sample.strategy_outcome != prior_outcome:
-            raise ValueError("matched arms disagree on the baseline strategy outcome")
+        baseline_lineage = (
+            sample.strategy_outcome,
+            sample.strategy_evaluation_sha256,
+            sample.strategy_evidence_as_of_ts_ms,
+            sample.strategy_market_snapshot_sha256,
+            sample.strategy_intent_id,
+            sample.strategy_intent_expires_at_ts_ms,
+        )
+        prior_lineage = baseline_lineage_by_sample.setdefault(sample.sample_id, baseline_lineage)
+        if baseline_lineage != prior_lineage:
+            raise ValueError("matched arms disagree on baseline strategy lineage")
 
     expected = [(arm, window.sample_id) for window in schedule.windows for arm in RESEARCH_ARMS]
     missing = [key for key in expected if key not in observed]
