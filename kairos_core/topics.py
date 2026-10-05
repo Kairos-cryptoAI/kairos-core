@@ -12,8 +12,12 @@ class Topics:
     # TacticalCommand/ValidatedOrder mutations.
     CLOSED_BAR = "kairos.market.closed_bar.v1"  # Binance collector -> Strategy Engine
     STRATEGY_INTENT = "kairos.strategy.intent.v1"  # Strategy Engine -> Router
+    STRATEGY_EVALUATION = "kairos.strategy.evaluation.v1"  # Observation, never order authority
     STRATEGY_ROUTE = "kairos.strategy.route.v1"  # Router -> Aggregator
+    DECISION_CONTEXT = "kairos.aggregator.decision_context.v1"  # Immutable review evidence only
     CANDIDATE_REVIEW = "kairos.aggregator.review.v1"  # Aggregator -> Risk Manager
+    REGIME_OBSERVATION = "kairos.market.regime_observation.v1"  # Opt-in deterministic evidence
+    REGIME_BOUND_ALLOCATION = "kairos.macro.regime_bound_allocation.v1"  # Opt-in capital/evidence binding
     # Advisory research output only.  Topic names are not an ACL; consumers
     # must still validate their exact contract and must not subscribe to this
     # topic from Risk Manager or Execution.

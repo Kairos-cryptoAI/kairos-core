@@ -8,9 +8,9 @@ the *only* vocabulary the layers use to talk to each other, so that the "compact
 flowing across the system is strongly typed, versioned and validated.
 
 ```
-Scouts ─▶ Router ─▶ Aggregator ─▶ Macro-Strategist ─▶ Risk Manager ─▶ Execution Engine
-   │         │           │               │                  │                 │
-   └─────────┴───────────┴── kairos-core contracts on the message bus ────────┘
+Market/Strategy/Text ─▶ Router ─▶ Candidate review ─▶ Risk ─▶ Execution
+                                ▲                   ▲
+                       causal context          Macro capital + venue/account
 ```
 
 ## What lives here
@@ -69,6 +69,33 @@ ClosedBarEventV1 -> StrategyIntentV1 -> CandidateRouteV1
 zero. Producers can use `canonical_sha256()` for auxiliary configuration and
 feature fingerprints. With deterministic inputs, the default message envelope,
 wire bytes and identity are identical across Windows research and Linux runtime.
+
+## Observation and causal-context additions
+
+`StrategyEvaluationV1` reports scheduled evaluation outcomes separately from
+trading intents. `NO_INTENT` requires complete evaluation evidence; warmup,
+disabled/unavailable input, non-scheduled work and errors cannot be counted as a
+quiet trading decision. It carries observation-only authority and grants no
+strategy approval or research-campaign enrollment.
+
+`DecisionContextV1` binds one exact route and intent to canonical immutable
+source bytes and first local receipt clocks. It explicitly accounts for compact
+market features, the declared closed-bar tail, referenced text and Macro
+availability. Market and closed-bar evidence are mandatory; referenced text is
+mandatory, while an unreferenced text or Macro source can explicitly remain
+unavailable unless the configured review profile requires it. Missing required,
+stale, conflicting or non-causal input means `DEFER` before model dispatch.
+The bounded tail is not a full-window/warmup proof, and a local receipt is not an
+off-host point-in-time archive attestation.
+
+The opt-in `RegimeCapabilityPolicyV1`, `RegimeObservationV1` and
+`RegimeBoundAllocationV1` separate deterministic market-regime capabilities
+from legacy Macro capital allocation. They bind exact strategy revision,
+code/configuration, detector, policy, source set and account evidence. They do
+not promote a rejected strategy, replace approval/venue/operator checks, equate
+legacy `CHOP` with `RANGE`, or increase risk limits. Default services retain the
+legacy policy; these contracts alone do not provide an enrolled adaptive
+strategy, qualified detector, complete deployment or trading authority.
 
 ## LLM-generated research proposals
 

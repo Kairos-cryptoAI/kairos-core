@@ -12,6 +12,13 @@ from .adaptive_candidate_protocol import (
     StrategyReviewAdaptiveCandidateArmV1,
 )
 from .base import SCHEMA_VERSION, KairosMessage, canonical_json_bytes, canonical_sha256
+from .decision_context import (
+    ContextAvailability,
+    ContextSourceKind,
+    DecisionContextReceiptV1,
+    DecisionContextSourceV1,
+    DecisionContextV1,
+)
 from .execution import ExecutionReport, OrderIntent, ValidatedOrder
 from .health import LLMHealthEvent
 from .llm_call_failure import LLMCallFailureClass, LLMCallFailureV1
@@ -24,6 +31,17 @@ from .market import (
     TechnicalIndicators,
 )
 from .paper import AccountSnapshotV2, OpenOrderSnapshotV2, PositionSnapshotV2, TradeExecutionEventV1
+from .regime_capability import (
+    REGIME_BOUND_ALLOCATION_TOPIC,
+    REGIME_OBSERVATION_TOPIC,
+    CapabilityRegime,
+    RegimeBoundAllocationV1,
+    RegimeCapabilityPolicyV1,
+    RegimeCapitalBasisV1,
+    RegimeObservationV1,
+    StrategyRegimeCapabilityV1,
+    validate_policy_binding,
+)
 from .research_decision import ResearchDecisionSampleV1
 from .research_schedule import (
     RESEARCH_ARMS,
@@ -73,6 +91,7 @@ from .strategy import (
     StrategyProvenanceV1,
     VenueQualityV1,
 )
+from .strategy_evaluation import StrategyEvaluationStatus, StrategyEvaluationV1
 from .tactical import GridAdjustment, TacticalCommand
 
 __all__ = [
@@ -82,6 +101,20 @@ __all__ = [
     "SCHEMA_VERSION",
     "canonical_json_bytes",
     "canonical_sha256",
+    "ContextAvailability",
+    "ContextSourceKind",
+    "DecisionContextReceiptV1",
+    "DecisionContextSourceV1",
+    "DecisionContextV1",
+    "REGIME_BOUND_ALLOCATION_TOPIC",
+    "REGIME_OBSERVATION_TOPIC",
+    "CapabilityRegime",
+    "RegimeBoundAllocationV1",
+    "RegimeCapabilityPolicyV1",
+    "RegimeCapitalBasisV1",
+    "RegimeObservationV1",
+    "StrategyRegimeCapabilityV1",
+    "validate_policy_binding",
     "MarketSnapshot",
     "OrderBookSummary",
     "DerivativesMetrics",
@@ -112,6 +145,8 @@ __all__ = [
     "StrategyReviewAdaptiveCandidateArmV1",
     "LLMProposalAdaptiveCandidateArmV1",
     "ClosedBarEventV1",
+    "StrategyEvaluationStatus",
+    "StrategyEvaluationV1",
     "ExitPlanV1",
     "StrategyProvenanceV1",
     "EvidenceReferenceV1",

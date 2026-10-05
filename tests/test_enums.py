@@ -1,5 +1,6 @@
 """Wire-format guarantees for the shared enums."""
 
+from kairos_core.contracts.regime_capability import REGIME_BOUND_ALLOCATION_TOPIC, REGIME_OBSERVATION_TOPIC
 from kairos_core.enums import (
     CandidateReviewTier,
     EntryPolicy,
@@ -53,3 +54,16 @@ def test_new_topics_are_distinct_from_the_legacy_dry_run_route():
     assert Topics.RISK_TRADE_DECISION != Topics.VALIDATED_ORDER
     assert Topics.ACCOUNT_SNAPSHOT_V2 != Topics.ACCOUNT_SNAPSHOT
     assert len(ALL_TOPICS) == len(set(ALL_TOPICS))
+
+
+def test_observation_context_and_opt_in_regime_topics_have_no_execution_alias():
+    advisory = {
+        Topics.STRATEGY_EVALUATION,
+        Topics.DECISION_CONTEXT,
+        Topics.REGIME_OBSERVATION,
+        Topics.REGIME_BOUND_ALLOCATION,
+    }
+    assert len(advisory) == 4
+    assert advisory.isdisjoint({Topics.RISK_TRADE_DECISION, Topics.VALIDATED_ORDER, Topics.STRATEGY_INTENT})
+    assert Topics.REGIME_OBSERVATION == REGIME_OBSERVATION_TOPIC
+    assert Topics.REGIME_BOUND_ALLOCATION == REGIME_BOUND_ALLOCATION_TOPIC
