@@ -242,7 +242,13 @@ class DecisionContextV1(StrictKairosMessage):
                     raise ValueError("closed bars are not the exact declared input tail")
                 if any(bar["symbol"] != self.symbol or bar["venue"] != intent["venue"] for bar in payloads):
                     raise ValueError("closed bar scope differs from the candidate")
-                if payloads[-1]["close_time_ms"] != intent["decision_ts_ms"]:
+                if intent["contract_version"] == "strategy-intent.observed-sim.v2":
+                    confirmation_close = int(dict(intent["metadata"])["confirmation_bar_close_ms"])
+                    if payloads[-1]["close_time_ms"] != confirmation_close:
+                        raise ValueError(
+                            "observed SIM closed bars must end at the immutable confirmation bar"
+                        )
+                elif payloads[-1]["close_time_ms"] != intent["decision_ts_ms"]:
                     raise ValueError("closed-bar evidence must end at the exact strategy decision bar")
                 if any(
                     b["open_time_ms"] != a["open_time_ms"] + 60_000

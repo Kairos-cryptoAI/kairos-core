@@ -7,6 +7,7 @@ or reinterpret the legacy ``TacticalCommand -> ValidatedOrder`` route.
 from __future__ import annotations
 
 import math
+import re
 from typing import Annotated, Literal, Self
 
 from pydantic import Field, field_validator, model_validator
@@ -171,7 +172,7 @@ class EvidenceReferenceV1(StrictValueModel):
 class StrategyIntentV1(StrictKairosMessage):
     """A deterministic candidate emitted by a pure strategy generator."""
 
-    contract_version: Literal["strategy-intent.v1"] = "strategy-intent.v1"
+    contract_version: Literal["strategy-intent.v1", "strategy-intent.observed-sim.v2"] = "strategy-intent.v1"
     intent_id: Sha256Hex | None = None
     strategy_id: str = Field(..., min_length=1, max_length=128)
     strategy_revision: str = Field(..., min_length=1, max_length=128)
@@ -208,8 +209,10 @@ class StrategyIntentV1(StrictKairosMessage):
             raise ValueError("entry cannot become eligible before the decision")
         if self.entry_expires_ts_ms < self.entry_eligible_ts_ms:
             raise ValueError("entry cannot expire before it becomes eligible")
-        if self.entry_eligible_ts_ms % 60_000 != 0:
+        if self.contract_version == "strategy-intent.v1" and self.entry_eligible_ts_ms % 60_000 != 0:
             raise ValueError("NEXT_BAR_MARKET eligibility must start on a one-minute boundary")
+        if self.contract_version == "strategy-intent.observed-sim.v2":
+            self._validate_observed_sim()
         plan = self.exit_plan
         if self.side is Side.LONG and not plan.stop_price < self.reference_price < plan.target_price:
             raise ValueError("LONG exits must satisfy stop < reference < target")
@@ -228,6 +231,42 @@ class StrategyIntentV1(StrictKairosMessage):
         object.__setattr__(self, "intent_id", expected_id)
         _set_default_envelope(self, stable_id=expected_id, timestamp_ms=self.decision_ts_ms)
         return self
+
+    def _validate_observed_sim(self) -> None:
+        """Additive SIM-only immediate issue, never a V1 clock reinterpretation."""
+        if self.entry_eligible_ts_ms != self.decision_ts_ms:
+            raise ValueError("observed SIM eligibility must equal its actual decision clock")
+        metadata = dict(self._canonical_metadata())
+        for key in (
+            "hypothesis_id",
+            "source_set_sha256",
+            "entry_quote_sha256",
+            "protection_sha256",
+        ):
+            if re.fullmatch(r"[0-9a-f]{64}", metadata.get(key, "")) is None:
+                raise ValueError("observed SIM requires immutable hypothesis/source/quote/protection hashes")
+        if metadata.get("evidence_kind") not in {"TEST_FIXTURE", "CALLER_ATTESTED_POINT_IN_TIME"}:
+            raise ValueError("observed SIM requires explicit non-production evidence kind")
+        raw_close = metadata.get("confirmation_bar_close_ms", "")
+        if not raw_close.isascii() or not raw_close.isdecimal() or str(int(raw_close)) != raw_close:
+            raise ValueError("observed SIM requires canonical confirmation bar close")
+        close = int(raw_close)
+        if close % 60_000 != 59_999 or not close < self.decision_ts_ms <= close + 60_000:
+            raise ValueError(
+                "observed SIM confirmation must be the latest completed minute before actual issue"
+            )
+        plan = self.exit_plan
+        protection = canonical_sha256(
+            {
+                "stop_price": plan.stop_price,
+                "target_price": plan.target_price,
+                "max_holding_ms": plan.max_holding_ms,
+                "trailing_activation_price": None,
+                "trailing_distance": None,
+            }
+        )
+        if metadata["protection_sha256"] != protection:
+            raise ValueError("observed SIM protection hash differs from immutable exit geometry")
 
     def _canonical_metadata(self) -> tuple[tuple[str, str], ...]:
         pairs: list[tuple[str, str]] = []
@@ -265,6 +304,16 @@ class StrategyIntentV1(StrictKairosMessage):
 
     def canonical_intent_bytes(self) -> bytes:
         return canonical_json_bytes(self.identity_payload())
+
+
+class ObservedSimStrategyIntentV2(StrategyIntentV1):
+    """Explicit quote-bound research SIM candidate; never PAPER/LIVE authority.
+
+    Existing typed native parsers retain the distinct version and its identity.
+    V1 remains the default and keeps its exact original clock/identity rules.
+    """
+
+    contract_version: Literal["strategy-intent.observed-sim.v2"] = "strategy-intent.observed-sim.v2"
 
 
 class ModelProvenanceV1(StrictValueModel):
@@ -561,6 +610,8 @@ class RiskTradeDecisionV1(StrictKairosMessage):
 
     @model_validator(mode="after")
     def validate_decision(self) -> Self:
+        if self.approved and self.intent.contract_version == "strategy-intent.observed-sim.v2":
+            raise ValueError("observed SIM intent cannot receive a PAPER/LIVE risk approval")
         if self.review.intent.intent_id != self.intent.intent_id:
             raise ValueError("review and risk decision must reference the same immutable intent")
         if self.exit_plan != self.intent.exit_plan:
