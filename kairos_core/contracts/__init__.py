@@ -20,6 +20,12 @@ from .decision_context import (
     DecisionContextV1,
 )
 from .execution import ExecutionReport, OrderIntent, ValidatedOrder
+from .execution_fee_v2 import (
+    ExecutionFeeBundleV2,
+    ExecutionFeeComponentV2,
+    TradeExecutionEventV2,
+    parse_trade_execution_event,
+)
 from .health import LLMHealthEvent
 from .llm_call_failure import LLMCallFailureClass, LLMCallFailureV1
 from .llm_proposal import LLMProposalModelProvenanceV1, LLMTradeProposalV1
@@ -159,6 +165,10 @@ __all__ = [
     "VenueQualityV1",
     "RiskTradeDecisionV1",
     "TradeExecutionEventV1",
+    "TradeExecutionEventV2",
+    "ExecutionFeeBundleV2",
+    "ExecutionFeeComponentV2",
+    "parse_trade_execution_event",
     "PositionSnapshotV2",
     "OpenOrderSnapshotV2",
     "AccountSnapshotV2",

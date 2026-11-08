@@ -25,6 +25,7 @@ class Topics:
     VENUE_QUALITY = "kairos.venue.quality.v1"  # EVEDEX gate -> Risk Manager/TCA
     RISK_TRADE_DECISION = "kairos.risk.trade_decision.v1"  # Risk Manager -> PAPER execution
     TRADE_EXECUTION_EVENT = "kairos.execution.trade_event.v1"  # Execution -> persistence/audit
+    TRADE_EXECUTION_EVENT_V2 = "kairos.execution.trade_event.v2"  # Explicit fee provenance/unknowns
     ACCOUNT_SNAPSHOT_V2 = "kairos.account.snapshot.v2"  # Reconciler -> Risk/Macro
 
     # Legacy DRY_RUN route retained unchanged.
